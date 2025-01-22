@@ -304,15 +304,59 @@ func (c *GraphQLClient) valuesEqual(currentValue *ProjectV2ItemFieldValue, field
 	return false
 }
 
+// constructMutationInput creates the input for the update mutation based on field type
+func (c *GraphQLClient) constructMutationInput(projectID, itemID, fieldID string, field ProjectField, isDateField bool) (githubv4.UpdateProjectV2ItemFieldValueInput, error) {
+	input := githubv4.UpdateProjectV2ItemFieldValueInput{
+		ProjectID: projectID,
+		ItemID:    itemID,
+		FieldID:   fieldID,
+	}
+
+	switch {
+	case isDateField && field.Value.Date != nil:
+		date := githubv4.Date{Time: *field.Value.Date}
+		input.Value = githubv4.ProjectV2FieldValue{Date: &date}
+	case !isDateField && field.Value.Text != nil:
+		text := githubv4.String(*field.Value.Text)
+		input.Value = githubv4.ProjectV2FieldValue{Text: &text}
+	default:
+		return input, fmt.Errorf("unsupported field value type")
+	}
+
+	return input, nil
+}
+
+// updateCacheFieldValue updates the cached field value after a successful mutation
+func (c *GraphQLClient) updateCacheFieldValue(project *ProjectV2, issueURL string, field ProjectField) {
+	for i, item := range project.Items.Nodes {
+		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
+			for j, fieldValue := range item.Fields.Nodes {
+				switch fieldValue.TypeName {
+				case "ProjectV2ItemFieldDateValue":
+					if fieldValue.DateValue.Field.DateField.Name == field.Name {
+						project.Items.Nodes[i].Fields.Nodes[j].DateValue.Date = &CustomDate{Time: *field.Value.Date}
+					}
+				case "ProjectV2ItemFieldSingleSelectValue":
+					if fieldValue.SingleSelectValue.Field.SingleSelectField.Name == field.Name {
+						project.Items.Nodes[i].Fields.Nodes[j].SingleSelectValue.Name = field.Value.Text
+					}
+				}
+			}
+			break
+		}
+	}
+}
+
 // UpdateProjectField implements the Client interface
 func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string, field ProjectField) error {
 	// Use cached data to find the project and item IDs
 	var project *ProjectV2
-	if projectNumber == c.cache.sourceNumber {
+	switch projectNumber {
+	case c.cache.sourceNumber:
 		project = c.cache.sourceProject
-	} else if projectNumber == c.cache.targetNumber {
+	case c.cache.targetNumber:
 		project = c.cache.targetProject
-	} else {
+	default:
 		return fmt.Errorf("project number %d not found in cache", projectNumber)
 	}
 
@@ -338,54 +382,25 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerT
 		return err
 	}
 
-	// Update the field value
+	// Construct the mutation input
+	input, err := c.constructMutationInput(project.ID, itemID, fieldID, field, isDateField)
+	if err != nil {
+		return err
+	}
+
+	// Execute the mutation
 	var mutation struct {
 		UpdateProjectV2ItemFieldValue struct {
 			ClientMutationID string
 		} `graphql:"updateProjectV2ItemFieldValue(input: $input)"`
 	}
 
-	// Construct the input based on field type
-	input := githubv4.UpdateProjectV2ItemFieldValueInput{
-		ProjectID: project.ID,
-		ItemID:    itemID,
-		FieldID:   fieldID,
-	}
-
-	switch {
-	case isDateField && field.Value.Date != nil:
-		date := githubv4.Date{Time: *field.Value.Date}
-		input.Value = githubv4.ProjectV2FieldValue{Date: &date}
-	case !isDateField && field.Value.Text != nil:
-		text := githubv4.String(*field.Value.Text)
-		input.Value = githubv4.ProjectV2FieldValue{Text: &text}
-	default:
-		return fmt.Errorf("unsupported field value type")
-	}
-
-	// Execute the mutation
 	if err := c.client.Mutate(ctx, &mutation, input, nil); err != nil {
 		return fmt.Errorf("failed to update field: %w", err)
 	}
 
 	// Update the cache with the new value
-	for i, item := range project.Items.Nodes {
-		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
-			for j, fieldValue := range item.Fields.Nodes {
-				switch fieldValue.TypeName {
-				case "ProjectV2ItemFieldDateValue":
-					if fieldValue.DateValue.Field.DateField.Name == field.Name {
-						project.Items.Nodes[i].Fields.Nodes[j].DateValue.Date = &CustomDate{Time: *field.Value.Date}
-					}
-				case "ProjectV2ItemFieldSingleSelectValue":
-					if fieldValue.SingleSelectValue.Field.SingleSelectField.Name == field.Name {
-						project.Items.Nodes[i].Fields.Nodes[j].SingleSelectValue.Name = field.Value.Text
-					}
-				}
-			}
-			break
-		}
-	}
+	c.updateCacheFieldValue(project, issueURL, field)
 
 	return nil
 }
@@ -576,22 +591,42 @@ func extractFieldConfigs(nodes []ProjectV2FieldConfiguration) []ProjectFieldConf
 	return configs
 }
 
-// extractIssueURLs extracts issue URLs from nodes
-func extractIssueURLs(nodes []struct {
-	Content struct {
-		TypeName string `graphql:"__typename"`
-		Issue    struct {
-			URL string
-		} `graphql:"... on Issue"`
-	}
-}) []string {
-	var issues []string
-	for _, node := range nodes {
-		if node.Content.TypeName == "Issue" {
-			issues = append(issues, node.Content.Issue.URL)
+// convertFieldValue converts a ProjectV2ItemFieldValue to our internal ProjectField format
+func (c *GraphQLClient) convertFieldValue(fieldValue ProjectV2ItemFieldValue) (ProjectField, bool) {
+	var field ProjectField
+
+	switch fieldValue.TypeName {
+	case "ProjectV2ItemFieldDateValue":
+		if fieldValue.DateValue.Date != nil {
+			field = ProjectField{
+				ID:   fieldValue.DateValue.Field.DateField.ID,
+				Name: fieldValue.DateValue.Field.DateField.Name,
+				Value: FieldValue{
+					Date: &fieldValue.DateValue.Date.Time,
+				},
+			}
+		}
+	case "ProjectV2ItemFieldSingleSelectValue":
+		field = ProjectField{
+			ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
+			Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
+			Value: FieldValue{
+				Text: fieldValue.SingleSelectValue.Name,
+			},
 		}
 	}
-	return issues
+
+	return field, field.ID != ""
+}
+
+// findTargetItem finds an item in a project by its issue URL
+func (c *GraphQLClient) findTargetItem(project *ProjectV2, issueURL string) (*ProjectV2Item, error) {
+	for _, item := range project.Items.Nodes {
+		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
+			return &item, nil
+		}
+	}
+	return nil, fmt.Errorf("issue %s not found in project", issueURL)
 }
 
 // GetProjectFieldValues implements the Client interface
@@ -604,45 +639,15 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, ownerType Own
 		}
 
 		// Find the item (issue) in the project
-		var targetItem *ProjectV2Item
-		for _, item := range project.Items.Nodes {
-			if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
-				targetItem = &item
-				break
-			}
-		}
-
-		if targetItem == nil {
-			return nil, fmt.Errorf("issue %s not found in project", issueURL)
+		targetItem, err := c.findTargetItem(project, issueURL)
+		if err != nil {
+			return nil, err
 		}
 
 		// Convert field values to our internal format
 		var fields []ProjectField
 		for _, fieldValue := range targetItem.Fields.Nodes {
-			var field ProjectField
-
-			switch fieldValue.TypeName {
-			case "ProjectV2ItemFieldDateValue":
-				if fieldValue.DateValue.Date != nil {
-					field = ProjectField{
-						ID:   fieldValue.DateValue.Field.DateField.ID,
-						Name: fieldValue.DateValue.Field.DateField.Name,
-						Value: FieldValue{
-							Date: &fieldValue.DateValue.Date.Time,
-						},
-					}
-				}
-			case "ProjectV2ItemFieldSingleSelectValue":
-				field = ProjectField{
-					ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
-					Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
-					Value: FieldValue{
-						Text: fieldValue.SingleSelectValue.Name,
-					},
-				}
-			}
-
-			if field.ID != "" { // Only add if we handled this field type
+			if field, ok := c.convertFieldValue(fieldValue); ok {
 				fields = append(fields, field)
 			}
 		}
@@ -668,45 +673,15 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, ownerType Own
 	}
 
 	// Find the item (issue) in the project
-	var targetItem *ProjectV2Item
-	for _, item := range project.Items.Nodes {
-		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
-			targetItem = &item
-			break
-		}
-	}
-
-	if targetItem == nil {
-		return nil, fmt.Errorf("issue %s not found in project", issueURL)
+	targetItem, err := c.findTargetItem(project, issueURL)
+	if err != nil {
+		return nil, err
 	}
 
 	// Convert field values to our internal format
 	var fields []ProjectField
 	for _, fieldValue := range targetItem.Fields.Nodes {
-		var field ProjectField
-
-		switch fieldValue.TypeName {
-		case "ProjectV2ItemFieldDateValue":
-			if fieldValue.DateValue.Date != nil {
-				field = ProjectField{
-					ID:   fieldValue.DateValue.Field.DateField.ID,
-					Name: fieldValue.DateValue.Field.DateField.Name,
-					Value: FieldValue{
-						Date: &fieldValue.DateValue.Date.Time,
-					},
-				}
-			}
-		case "ProjectV2ItemFieldSingleSelectValue":
-			field = ProjectField{
-				ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
-				Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
-				Value: FieldValue{
-					Text: fieldValue.SingleSelectValue.Name,
-				},
-			}
-		}
-
-		if field.ID != "" { // Only add if we handled this field type
+		if field, ok := c.convertFieldValue(fieldValue); ok {
 			fields = append(fields, field)
 		}
 	}
