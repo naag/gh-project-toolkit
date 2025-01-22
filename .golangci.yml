@@ -1,0 +1,41 @@
+linters:
+  enable:
+    - gofmt
+    - govet
+    - errcheck
+    - staticcheck
+    - gosimple
+    - ineffassign
+    - typecheck
+    - unused
+    - misspell
+    - gocyclo
+    - gosec
+    - revive
+    - prealloc
+    - unconvert
+    - unparam
+    - gocritic
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+  gosec:
+    excludes:
+      - G115  # Disable integer overflow check
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-dirs:
+    - bin
+
+run:
+  deadline: 5m
+  tests: true 

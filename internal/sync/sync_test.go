@@ -12,7 +12,7 @@ import (
 func TestSyncFields(t *testing.T) {
 	now := time.Now()
 	mockClient := &mock.Client{
-		GetProjectFieldsFunc: func(ctx context.Context, orgName string, projectNumber int, issueURL string) ([]github.ProjectField, error) {
+		GetProjectFieldsFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int, issueURL string) ([]github.ProjectField, error) {
 			return []github.ProjectField{
 				{
 					ID:   "1",
@@ -23,7 +23,7 @@ func TestSyncFields(t *testing.T) {
 				},
 			}, nil
 		},
-		UpdateProjectFieldFunc: func(ctx context.Context, orgName string, projectNumber int, issueURL string, field github.ProjectField) error {
+		UpdateProjectFieldFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int, issueURL string, field github.ProjectField) error {
 			if field.Name != "Start date" {
 				t.Errorf("expected field name 'Start date', got %s", field.Name)
 			}
@@ -38,6 +38,7 @@ func TestSyncFields(t *testing.T) {
 
 	err := service.SyncFields(
 		context.Background(),
+		github.OwnerTypeOrg,
 		"myorg",
 		824,
 		825,

@@ -7,8 +7,11 @@ test:
 	go test -v ./...
 
 lint:
-	go vet ./...
-	test -z "$$(gofmt -l .)"
+	~/go/bin/golangci-lint run ./...
 
 clean:
-	rm -rf bin/ 
+	rm -rf bin/
+
+.PHONY: install-tools
+install-tools:
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest 

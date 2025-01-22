@@ -129,6 +129,10 @@ type (
 )
 
 func (c *GraphQLClient) getOrgProject(ctx context.Context, orgName string, projectNumber int) (*ProjectV2, error) {
+	if projectNumber <= 0 {
+		return nil, fmt.Errorf("invalid project number: %d", projectNumber)
+	}
+
 	var query struct {
 		Organization struct {
 			ProjectV2 ProjectV2 `graphql:"projectV2(number: $projectNumber)"`
@@ -148,6 +152,10 @@ func (c *GraphQLClient) getOrgProject(ctx context.Context, orgName string, proje
 }
 
 func (c *GraphQLClient) getUserProject(ctx context.Context, username string, projectNumber int) (*ProjectV2, error) {
+	if projectNumber <= 0 {
+		return nil, fmt.Errorf("invalid project number: %d", projectNumber)
+	}
+
 	var query struct {
 		User struct {
 			ProjectV2 ProjectV2 `graphql:"projectV2(number: $projectNumber)"`
@@ -231,6 +239,65 @@ func (c *GraphQLClient) GetProjectFields(ctx context.Context, ownerType OwnerTyp
 	return fields, nil
 }
 
+// findProjectItem finds an item in a project by its issue URL and field name
+func (c *GraphQLClient) findProjectItem(project *ProjectV2, issueURL string, fieldName string) (string, *ProjectV2ItemFieldValue, error) {
+	for _, item := range project.Items.Nodes {
+		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
+			// Find current value of the field we want to update
+			for _, fieldValue := range item.Fields.Nodes {
+				switch fieldValue.TypeName {
+				case "ProjectV2ItemFieldDateValue":
+					if fieldValue.DateValue.Field.DateField.Name == fieldName {
+						return item.ID, &fieldValue, nil
+					}
+				case "ProjectV2ItemFieldSingleSelectValue":
+					if fieldValue.SingleSelectValue.Field.SingleSelectField.Name == fieldName {
+						return item.ID, &fieldValue, nil
+					}
+				}
+			}
+			return item.ID, nil, nil
+		}
+	}
+	return "", nil, fmt.Errorf("issue %s not found in project", issueURL)
+}
+
+// findProjectField finds a field configuration in a project by its name
+func (c *GraphQLClient) findProjectField(project *ProjectV2, fieldName string) (string, bool, error) {
+	for _, f := range project.Fields.Nodes {
+		switch f.TypeName {
+		case "ProjectV2Field":
+			if f.DateField.Name == fieldName {
+				return f.DateField.ID, true, nil
+			}
+		case "ProjectV2SingleSelectField":
+			if f.SingleSelectField.Name == fieldName {
+				return f.SingleSelectField.ID, false, nil
+			}
+		}
+	}
+	return "", false, fmt.Errorf("field %s not found in project", fieldName)
+}
+
+// valuesEqual checks if the current field value equals the new value
+func (c *GraphQLClient) valuesEqual(currentValue *ProjectV2ItemFieldValue, field ProjectField) bool {
+	if currentValue == nil {
+		return false
+	}
+
+	switch currentValue.TypeName {
+	case "ProjectV2ItemFieldDateValue":
+		if currentValue.DateValue.Date != nil && field.Value.Date != nil {
+			return currentValue.DateValue.Date.Time.Equal(*field.Value.Date)
+		}
+	case "ProjectV2ItemFieldSingleSelectValue":
+		if currentValue.SingleSelectValue.Name != nil && field.Value.Text != nil {
+			return *currentValue.SingleSelectValue.Name == *field.Value.Text
+		}
+	}
+	return false
+}
+
 // UpdateProjectField implements the Client interface
 func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string, field ProjectField) error {
 	var project *ProjectV2
@@ -249,59 +316,26 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerT
 		return fmt.Errorf("failed to get project: %w", err)
 	}
 
-	// Find the item (issue) in the project
-	var itemID string
-	var currentValue *ProjectV2ItemFieldValue
-	for _, item := range project.Items.Nodes {
-		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
-			itemID = item.ID
-			// Find current value of the field we want to update
-			for _, fieldValue := range item.Fields.Nodes {
-				switch fieldValue.TypeName {
-				case "ProjectV2ItemFieldDateValue":
-					if fieldValue.DateValue.Field.DateField.Name == field.Name {
-						currentValue = &fieldValue
-					}
-				case "ProjectV2ItemFieldSingleSelectValue":
-					if fieldValue.SingleSelectValue.Field.SingleSelectField.Name == field.Name {
-						currentValue = &fieldValue
-					}
-				}
-			}
-			break
-		}
+	// Find the item and its current field value
+	itemID, currentValue, err := c.findProjectItem(project, issueURL, field.Name)
+	if err != nil {
+		return err
 	}
 
-	if itemID == "" {
-		return fmt.Errorf("issue %s not found in project", issueURL)
+	// Check if we need to update the value
+	if c.valuesEqual(currentValue, field) {
+		slog.Info("skipping field update",
+			"message", "field already up to date",
+			"field", field.Name,
+			"value", field.Value.Date,
+		)
+		return nil
 	}
 
-	// Compare values to see if update is needed
-	if currentValue != nil {
-		switch currentValue.TypeName {
-		case "ProjectV2ItemFieldDateValue":
-			if currentValue.DateValue.Date != nil && field.Value.Date != nil {
-				if currentValue.DateValue.Date.Time.Equal(*field.Value.Date) {
-					slog.Info("skipping field update",
-						"message", "field already up to date",
-						"field", field.Name,
-						"value", field.Value.Date,
-					)
-					return nil
-				}
-			}
-		case "ProjectV2ItemFieldSingleSelectValue":
-			if currentValue.SingleSelectValue.Name != nil && field.Value.Text != nil {
-				if *currentValue.SingleSelectValue.Name == *field.Value.Text {
-					slog.Info("skipping field update",
-						"message", "field already up to date",
-						"field", field.Name,
-						"value", *field.Value.Text,
-					)
-					return nil
-				}
-			}
-		}
+	// Find the field configuration
+	fieldID, isDateField, err := c.findProjectField(project, field.Name)
+	if err != nil {
+		return err
 	}
 
 	// If we get here, we need to update the field
@@ -309,31 +343,6 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerT
 		"message", "updating field value",
 		"field", field.Name,
 	)
-
-	// Find the field configuration
-	var fieldID string
-	var isDateField bool
-	for _, f := range project.Fields.Nodes {
-		switch f.TypeName {
-		case "ProjectV2Field":
-			if f.DateField.Name == field.Name {
-				fieldID = f.DateField.ID
-				isDateField = true
-			}
-		case "ProjectV2SingleSelectField":
-			if f.SingleSelectField.Name == field.Name {
-				fieldID = f.SingleSelectField.ID
-				isDateField = false
-			}
-		}
-		if fieldID != "" {
-			break
-		}
-	}
-
-	if fieldID == "" {
-		return fmt.Errorf("field %s not found in project", field.Name)
-	}
 
 	// Update the field value
 	var mutation struct {
@@ -349,14 +358,14 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerT
 		FieldID:   fieldID,
 	}
 
-	if isDateField && field.Value.Date != nil {
-		// For date fields, use the Date field directly
+	switch {
+	case isDateField && field.Value.Date != nil:
 		date := githubv4.Date{Time: *field.Value.Date}
 		input.Value = githubv4.ProjectV2FieldValue{Date: &date}
-	} else if !isDateField && field.Value.Text != nil {
+	case !isDateField && field.Value.Text != nil:
 		text := githubv4.String(*field.Value.Text)
 		input.Value = githubv4.ProjectV2FieldValue{Text: &text}
-	} else {
+	default:
 		return fmt.Errorf("unsupported field value type")
 	}
 

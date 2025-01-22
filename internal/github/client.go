@@ -23,7 +23,9 @@ type ProjectField struct {
 type OwnerType int
 
 const (
+	// OwnerTypeUser represents a user-owned project
 	OwnerTypeUser OwnerType = iota
+	// OwnerTypeOrg represents an organization-owned project
 	OwnerTypeOrg
 )
 

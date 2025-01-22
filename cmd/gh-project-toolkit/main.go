@@ -60,15 +60,17 @@ func init() {
 	syncFieldsCmd.Flags().StringArrayVar(&fieldMappings, "field-mapping", nil, "Field mapping in the format 'source=target' (can be specified multiple times)")
 	syncFieldsCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging of HTTP traffic")
 
-	syncFieldsCmd.MarkFlagRequired("source-project")
-	syncFieldsCmd.MarkFlagRequired("target-project")
-	syncFieldsCmd.MarkFlagRequired("issue")
-	syncFieldsCmd.MarkFlagRequired("field-mapping")
+	for _, flag := range []string{"source-project", "target-project", "issue", "field-mapping"} {
+		if err := syncFieldsCmd.MarkFlagRequired(flag); err != nil {
+			// This should never happen as we're using predefined flags
+			panic(fmt.Sprintf("failed to mark flag %s as required: %v", flag, err))
+		}
+	}
 }
 
 func runSyncFields(cmd *cobra.Command, args []string) error {
 	// Parse field mappings
-	var mappings []sync.FieldMapping
+	mappings := make([]sync.FieldMapping, 0, len(fieldMappings))
 	for _, mapping := range fieldMappings {
 		parts := strings.Split(mapping, "=")
 		if len(parts) != 2 {
