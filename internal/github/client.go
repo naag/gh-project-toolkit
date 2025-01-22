@@ -19,6 +19,13 @@ type ProjectField struct {
 	Value FieldValue
 }
 
+// ProjectFieldConfig represents a field configuration in a GitHub project
+type ProjectFieldConfig struct {
+	ID   string
+	Name string
+	Type string // e.g., "ProjectV2Field", "ProjectV2SingleSelectField"
+}
+
 // OwnerType represents the type of project owner (user or organization)
 type OwnerType int
 
@@ -39,4 +46,10 @@ type Client interface {
 
 	// GetProjectIssues retrieves all issue URLs from a project
 	GetProjectIssues(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) ([]string, error)
+
+	// GetProjectFieldConfigsAndIssues retrieves field configurations and issues for both projects
+	GetProjectFieldConfigsAndIssues(ctx context.Context, ownerType OwnerType, ownerLogin string, sourceProjectNumber, targetProjectNumber int) (sourceConfigs []ProjectFieldConfig, targetConfigs []ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error)
+
+	// GetProjectFieldValues retrieves field values for an issue in a project, using pre-fetched field configurations
+	GetProjectFieldValues(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string, fieldConfigs []ProjectFieldConfig) ([]ProjectField, error)
 }

@@ -14,6 +14,12 @@ import (
 // GraphQLClient implements the Client interface using GitHub's GraphQL API
 type GraphQLClient struct {
 	client *githubv4.Client
+	cache  struct {
+		sourceProject *ProjectV2
+		targetProject *ProjectV2
+		sourceNumber  int
+		targetNumber  int
+	}
 }
 
 // CustomDate is a custom date type that can parse GitHub's date format
@@ -300,20 +306,14 @@ func (c *GraphQLClient) valuesEqual(currentValue *ProjectV2ItemFieldValue, field
 
 // UpdateProjectField implements the Client interface
 func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string, field ProjectField) error {
+	// Use cached data to find the project and item IDs
 	var project *ProjectV2
-	var err error
-
-	switch ownerType {
-	case OwnerTypeUser:
-		project, err = c.getUserProject(ctx, ownerLogin, projectNumber)
-	case OwnerTypeOrg:
-		project, err = c.getOrgProject(ctx, ownerLogin, projectNumber)
-	default:
-		return fmt.Errorf("invalid owner type")
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
+	if projectNumber == c.cache.sourceNumber {
+		project = c.cache.sourceProject
+	} else if projectNumber == c.cache.targetNumber {
+		project = c.cache.targetProject
+	} else {
+		return fmt.Errorf("project number %d not found in cache", projectNumber)
 	}
 
 	// Find the item and its current field value
@@ -337,12 +337,6 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerT
 	if err != nil {
 		return err
 	}
-
-	// If we get here, we need to update the field
-	slog.Info("syncing field",
-		"message", "updating field value",
-		"field", field.Name,
-	)
 
 	// Update the field value
 	var mutation struct {
@@ -369,11 +363,51 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerT
 		return fmt.Errorf("unsupported field value type")
 	}
 
-	return c.client.Mutate(ctx, &mutation, input, nil)
+	// Execute the mutation
+	if err := c.client.Mutate(ctx, &mutation, input, nil); err != nil {
+		return fmt.Errorf("failed to update field: %w", err)
+	}
+
+	// Update the cache with the new value
+	for i, item := range project.Items.Nodes {
+		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
+			for j, fieldValue := range item.Fields.Nodes {
+				switch fieldValue.TypeName {
+				case "ProjectV2ItemFieldDateValue":
+					if fieldValue.DateValue.Field.DateField.Name == field.Name {
+						project.Items.Nodes[i].Fields.Nodes[j].DateValue.Date = &CustomDate{Time: *field.Value.Date}
+					}
+				case "ProjectV2ItemFieldSingleSelectValue":
+					if fieldValue.SingleSelectValue.Field.SingleSelectField.Name == field.Name {
+						project.Items.Nodes[i].Fields.Nodes[j].SingleSelectValue.Name = field.Value.Text
+					}
+				}
+			}
+			break
+		}
+	}
+
+	return nil
 }
 
 // GetProjectIssues implements the Client interface
 func (c *GraphQLClient) GetProjectIssues(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) ([]string, error) {
+	// Use cached data if available
+	if c.cache.sourceProject != nil && c.cache.targetProject != nil {
+		var issues []string
+		project := c.cache.sourceProject
+		if projectNumber == c.cache.targetNumber {
+			project = c.cache.targetProject
+		}
+		for _, item := range project.Items.Nodes {
+			if item.Content.TypeName == "Issue" {
+				issues = append(issues, item.Content.Issue.URL)
+			}
+		}
+		return issues, nil
+	}
+
+	// Fall back to fetching data if not cached
 	var project *ProjectV2
 	var err error
 
@@ -398,4 +432,332 @@ func (c *GraphQLClient) GetProjectIssues(ctx context.Context, ownerType OwnerTyp
 	}
 
 	return issues, nil
+}
+
+// GetProjectFieldConfigsAndIssues retrieves field configurations and issues for both projects
+func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, ownerType OwnerType, ownerLogin string, sourceProjectNumber, targetProjectNumber int) (sourceConfigs []ProjectFieldConfig, targetConfigs []ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error) {
+	// Store project numbers in cache
+	c.cache.sourceNumber = sourceProjectNumber
+	c.cache.targetNumber = targetProjectNumber
+
+	var query struct {
+		User struct {
+			SourceProject struct {
+				ID     string
+				Fields struct {
+					Nodes []ProjectV2FieldConfiguration
+				} `graphql:"fields(first: 100)"`
+				Items struct {
+					Nodes []struct {
+						ID      string
+						Content struct {
+							TypeName string `graphql:"__typename"`
+							Issue    struct {
+								URL string
+							} `graphql:"... on Issue"`
+						}
+						Fields struct {
+							Nodes []ProjectV2ItemFieldValue
+						} `graphql:"fieldValues(first: 100)"`
+					}
+				} `graphql:"items(first: 100)"`
+			} `graphql:"sourceProject: projectV2(number: $sourceProjectNumber)"`
+			TargetProject struct {
+				ID     string
+				Fields struct {
+					Nodes []ProjectV2FieldConfiguration
+				} `graphql:"fields(first: 100)"`
+				Items struct {
+					Nodes []struct {
+						ID      string
+						Content struct {
+							TypeName string `graphql:"__typename"`
+							Issue    struct {
+								URL string
+							} `graphql:"... on Issue"`
+						}
+						Fields struct {
+							Nodes []ProjectV2ItemFieldValue
+						} `graphql:"fieldValues(first: 100)"`
+					}
+				} `graphql:"items(first: 100)"`
+			} `graphql:"targetProject: projectV2(number: $targetProjectNumber)"`
+		} `graphql:"user(login: $login)"`
+	}
+
+	// Execute the query with field aliases
+	if err := c.client.Query(ctx, &query, map[string]interface{}{
+		"login":               githubv4.String(ownerLogin),
+		"sourceProjectNumber": githubv4.Int(sourceProjectNumber),
+		"targetProjectNumber": githubv4.Int(targetProjectNumber),
+	}); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to query projects: %w", err)
+	}
+
+	// Cache the project data
+	c.cache.sourceProject = &ProjectV2{
+		ID: query.User.SourceProject.ID,
+		Fields: struct{ Nodes []ProjectV2FieldConfiguration }{
+			Nodes: query.User.SourceProject.Fields.Nodes,
+		},
+		Items: struct{ Nodes []ProjectV2Item }{
+			Nodes: make([]ProjectV2Item, len(query.User.SourceProject.Items.Nodes)),
+		},
+	}
+	for i, item := range query.User.SourceProject.Items.Nodes {
+		c.cache.sourceProject.Items.Nodes[i] = ProjectV2Item{
+			ID:      item.ID,
+			Content: item.Content,
+			Fields: struct{ Nodes []ProjectV2ItemFieldValue }{
+				Nodes: item.Fields.Nodes,
+			},
+		}
+	}
+
+	c.cache.targetProject = &ProjectV2{
+		ID: query.User.TargetProject.ID,
+		Fields: struct{ Nodes []ProjectV2FieldConfiguration }{
+			Nodes: query.User.TargetProject.Fields.Nodes,
+		},
+		Items: struct{ Nodes []ProjectV2Item }{
+			Nodes: make([]ProjectV2Item, len(query.User.TargetProject.Items.Nodes)),
+		},
+	}
+	for i, item := range query.User.TargetProject.Items.Nodes {
+		c.cache.targetProject.Items.Nodes[i] = ProjectV2Item{
+			ID:      item.ID,
+			Content: item.Content,
+			Fields: struct{ Nodes []ProjectV2ItemFieldValue }{
+				Nodes: item.Fields.Nodes,
+			},
+		}
+	}
+
+	// Extract field configurations and issues
+	sourceConfigs = extractFieldConfigs(query.User.SourceProject.Fields.Nodes)
+	targetConfigs = extractFieldConfigs(query.User.TargetProject.Fields.Nodes)
+
+	// Extract issues with modified extractIssueURLs function
+	sourceIssues = make([]string, 0)
+	targetIssues = make([]string, 0)
+	for _, node := range query.User.SourceProject.Items.Nodes {
+		if node.Content.TypeName == "Issue" {
+			sourceIssues = append(sourceIssues, node.Content.Issue.URL)
+		}
+	}
+	for _, node := range query.User.TargetProject.Items.Nodes {
+		if node.Content.TypeName == "Issue" {
+			targetIssues = append(targetIssues, node.Content.Issue.URL)
+		}
+	}
+
+	return sourceConfigs, targetConfigs, sourceIssues, targetIssues, nil
+}
+
+// extractFieldConfigs extracts field configurations from nodes
+func extractFieldConfigs(nodes []ProjectV2FieldConfiguration) []ProjectFieldConfig {
+	var configs []ProjectFieldConfig
+	for _, field := range nodes {
+		switch field.TypeName {
+		case "ProjectV2Field":
+			configs = append(configs, ProjectFieldConfig{
+				ID:   field.DateField.ID,
+				Name: field.DateField.Name,
+				Type: field.TypeName,
+			})
+		case "ProjectV2SingleSelectField":
+			configs = append(configs, ProjectFieldConfig{
+				ID:   field.SingleSelectField.ID,
+				Name: field.SingleSelectField.Name,
+				Type: field.TypeName,
+			})
+		}
+	}
+	return configs
+}
+
+// extractIssueURLs extracts issue URLs from nodes
+func extractIssueURLs(nodes []struct {
+	Content struct {
+		TypeName string `graphql:"__typename"`
+		Issue    struct {
+			URL string
+		} `graphql:"... on Issue"`
+	}
+}) []string {
+	var issues []string
+	for _, node := range nodes {
+		if node.Content.TypeName == "Issue" {
+			issues = append(issues, node.Content.Issue.URL)
+		}
+	}
+	return issues
+}
+
+// GetProjectFieldValues implements the Client interface
+func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string, fieldConfigs []ProjectFieldConfig) ([]ProjectField, error) {
+	// Use cached data if available
+	if c.cache.sourceProject != nil && c.cache.targetProject != nil {
+		project := c.cache.sourceProject
+		if projectNumber == c.cache.targetNumber {
+			project = c.cache.targetProject
+		}
+
+		// Find the item (issue) in the project
+		var targetItem *ProjectV2Item
+		for _, item := range project.Items.Nodes {
+			if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
+				targetItem = &item
+				break
+			}
+		}
+
+		if targetItem == nil {
+			return nil, fmt.Errorf("issue %s not found in project", issueURL)
+		}
+
+		// Convert field values to our internal format
+		var fields []ProjectField
+		for _, fieldValue := range targetItem.Fields.Nodes {
+			var field ProjectField
+
+			switch fieldValue.TypeName {
+			case "ProjectV2ItemFieldDateValue":
+				if fieldValue.DateValue.Date != nil {
+					field = ProjectField{
+						ID:   fieldValue.DateValue.Field.DateField.ID,
+						Name: fieldValue.DateValue.Field.DateField.Name,
+						Value: FieldValue{
+							Date: &fieldValue.DateValue.Date.Time,
+						},
+					}
+				}
+			case "ProjectV2ItemFieldSingleSelectValue":
+				field = ProjectField{
+					ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
+					Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
+					Value: FieldValue{
+						Text: fieldValue.SingleSelectValue.Name,
+					},
+				}
+			}
+
+			if field.ID != "" { // Only add if we handled this field type
+				fields = append(fields, field)
+			}
+		}
+
+		return fields, nil
+	}
+
+	// Fall back to fetching data if not cached
+	var project *ProjectV2
+	var err error
+
+	switch ownerType {
+	case OwnerTypeUser:
+		project, err = c.getUserProjectItems(ctx, ownerLogin, projectNumber)
+	case OwnerTypeOrg:
+		project, err = c.getOrgProjectItems(ctx, ownerLogin, projectNumber)
+	default:
+		return nil, fmt.Errorf("invalid owner type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	// Find the item (issue) in the project
+	var targetItem *ProjectV2Item
+	for _, item := range project.Items.Nodes {
+		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
+			targetItem = &item
+			break
+		}
+	}
+
+	if targetItem == nil {
+		return nil, fmt.Errorf("issue %s not found in project", issueURL)
+	}
+
+	// Convert field values to our internal format
+	var fields []ProjectField
+	for _, fieldValue := range targetItem.Fields.Nodes {
+		var field ProjectField
+
+		switch fieldValue.TypeName {
+		case "ProjectV2ItemFieldDateValue":
+			if fieldValue.DateValue.Date != nil {
+				field = ProjectField{
+					ID:   fieldValue.DateValue.Field.DateField.ID,
+					Name: fieldValue.DateValue.Field.DateField.Name,
+					Value: FieldValue{
+						Date: &fieldValue.DateValue.Date.Time,
+					},
+				}
+			}
+		case "ProjectV2ItemFieldSingleSelectValue":
+			field = ProjectField{
+				ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
+				Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
+				Value: FieldValue{
+					Text: fieldValue.SingleSelectValue.Name,
+				},
+			}
+		}
+
+		if field.ID != "" { // Only add if we handled this field type
+			fields = append(fields, field)
+		}
+	}
+
+	return fields, nil
+}
+
+// getUserProjectItems gets only the items and their field values for a user project
+func (c *GraphQLClient) getUserProjectItems(ctx context.Context, username string, projectNumber int) (*ProjectV2, error) {
+	if projectNumber <= 0 {
+		return nil, fmt.Errorf("invalid project number: %d", projectNumber)
+	}
+
+	var query struct {
+		User struct {
+			ProjectV2 ProjectV2 `graphql:"projectV2(number: $projectNumber)"`
+		} `graphql:"user(login: $login)"`
+	}
+
+	variables := map[string]interface{}{
+		"login":         githubv4.String(username),
+		"projectNumber": githubv4.Int(projectNumber),
+	}
+
+	if err := c.client.Query(ctx, &query, variables); err != nil {
+		return nil, fmt.Errorf("failed to query user project: %w", err)
+	}
+
+	return &query.User.ProjectV2, nil
+}
+
+// getOrgProjectItems gets only the items and their field values for an org project
+func (c *GraphQLClient) getOrgProjectItems(ctx context.Context, orgName string, projectNumber int) (*ProjectV2, error) {
+	if projectNumber <= 0 {
+		return nil, fmt.Errorf("invalid project number: %d", projectNumber)
+	}
+
+	var query struct {
+		Organization struct {
+			ProjectV2 ProjectV2 `graphql:"projectV2(number: $projectNumber)"`
+		} `graphql:"organization(login: $login)"`
+	}
+
+	variables := map[string]interface{}{
+		"login":         githubv4.String(orgName),
+		"projectNumber": githubv4.Int(projectNumber),
+	}
+
+	if err := c.client.Query(ctx, &query, variables); err != nil {
+		return nil, fmt.Errorf("failed to query organization project: %w", err)
+	}
+
+	return &query.Organization.ProjectV2, nil
 }

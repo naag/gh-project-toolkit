@@ -105,41 +105,12 @@ func runSyncFields(cmd *cobra.Command, args []string) error {
 		ownerLogin = org
 	}
 
-	// If auto-detect is enabled, get the list of issues from both projects
-	if autoDetectIssues {
-		sourceIssues, err := service.GetProjectIssues(context.Background(), ownerType, ownerLogin, sourceProject)
-		if err != nil {
-			return fmt.Errorf("failed to get source project issues: %w", err)
-		}
-
-		targetIssues, err := service.GetProjectIssues(context.Background(), ownerType, ownerLogin, targetProject)
-		if err != nil {
-			return fmt.Errorf("failed to get target project issues: %w", err)
-		}
-
-		// Find intersection of issues
-		issueMap := make(map[string]bool)
-		for _, issue := range targetIssues {
-			issueMap[issue] = true
-		}
-
-		var commonIssues []string
-		for _, issue := range sourceIssues {
-			if issueMap[issue] {
-				commonIssues = append(commonIssues, issue)
-			}
-		}
-
-		if len(commonIssues) == 0 {
-			return fmt.Errorf("no common issues found between source and target projects")
-		}
-
-		slog.Info("found common issues", "count", len(commonIssues))
-		issues = commonIssues
-	} else if len(issues) == 0 {
+	// If no issues are specified and auto-detect is not enabled, return an error
+	if len(issues) == 0 && !autoDetectIssues {
 		return fmt.Errorf("no issues specified and --auto-detect-issues not enabled")
 	}
 
+	// Call SyncFields with empty issues slice if auto-detect is enabled
 	if err := service.SyncFields(context.Background(), ownerType, ownerLogin, sourceProject, targetProject, issues, mappings); err != nil {
 		return fmt.Errorf("failed to sync fields: %w", err)
 	}
