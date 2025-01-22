@@ -138,11 +138,6 @@ func (s *Service) applyFieldMappings(ctx context.Context, ownerType github.Owner
 				}
 
 				// Update field in target project
-				slog.Info("syncing field",
-					"message", "updating field value",
-					"field", mapping.TargetField,
-				)
-
 				if err := s.client.UpdateProjectField(ctx, ownerType, ownerLogin, targetProject, issueURL, targetField); err != nil {
 					return fmt.Errorf("failed to update field for %s: %w", issueURL, err)
 				}

@@ -87,8 +87,12 @@ type (
 			Name string
 		} `graphql:"... on ProjectV2Field"`
 		SingleSelectField struct {
-			ID   string
-			Name string
+			ID      string
+			Name    string
+			Options []struct {
+				ID   string
+				Name string
+			} `graphql:"options"`
 		} `graphql:"... on ProjectV2SingleSelectField"`
 	}
 
@@ -317,8 +321,24 @@ func (c *GraphQLClient) constructMutationInput(projectID, itemID, fieldID string
 		date := githubv4.Date{Time: *field.Value.Date}
 		input.Value = githubv4.ProjectV2FieldValue{Date: &date}
 	case !isDateField && field.Value.Text != nil:
-		text := githubv4.String(*field.Value.Text)
-		input.Value = githubv4.ProjectV2FieldValue{Text: &text}
+		// Find the option ID for the single select value
+		var optionID string
+		for _, f := range c.cache.sourceProject.Fields.Nodes {
+			if f.TypeName == "ProjectV2SingleSelectField" && f.SingleSelectField.Name == field.Name {
+				for _, opt := range f.SingleSelectField.Options {
+					if opt.Name == *field.Value.Text {
+						optionID = opt.ID
+						break
+					}
+				}
+				break
+			}
+		}
+		if optionID == "" {
+			return input, fmt.Errorf("single select option %q not found for field %q", *field.Value.Text, field.Name)
+		}
+		optionIDv4 := githubv4.String(optionID)
+		input.Value = githubv4.ProjectV2FieldValue{SingleSelectOptionID: &optionIDv4}
 	default:
 		return input, fmt.Errorf("unsupported field value type")
 	}
@@ -368,13 +388,33 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerT
 
 	// Check if we need to update the value
 	if c.valuesEqual(currentValue, field) {
-		slog.Info("skipping field update",
-			"message", "field already up to date",
-			"field", field.Name,
-			"value", field.Value.Date,
-		)
 		return nil
 	}
+
+	// Log the field update with previous and new values
+	var oldValue, newValue string
+	if currentValue != nil {
+		switch currentValue.TypeName {
+		case "ProjectV2ItemFieldDateValue":
+			if currentValue.DateValue.Date != nil {
+				oldValue = currentValue.DateValue.Date.Time.Format("2006-01-02")
+			}
+		case "ProjectV2ItemFieldSingleSelectValue":
+			if currentValue.SingleSelectValue.Name != nil {
+				oldValue = *currentValue.SingleSelectValue.Name
+			}
+		}
+	}
+	if field.Value.Date != nil {
+		newValue = field.Value.Date.Format("2006-01-02")
+	} else if field.Value.Text != nil {
+		newValue = *field.Value.Text
+	}
+	slog.Info("updating field value",
+		"field", field.Name,
+		"old", oldValue,
+		"new", newValue,
+	)
 
 	// Find the field configuration
 	fieldID, isDateField, err := c.findProjectField(project, field.Name)
