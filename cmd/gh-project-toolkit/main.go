@@ -40,13 +40,14 @@ var syncFieldsCmd = &cobra.Command{
 }
 
 var (
-	org           string
-	user          string
-	sourceProject int
-	targetProject int
-	issues        []string
-	fieldMappings []string
-	verbose       bool
+	org              string
+	user             string
+	sourceProject    int
+	targetProject    int
+	issues           []string
+	fieldMappings    []string
+	verbose          bool
+	autoDetectIssues bool
 )
 
 func init() {
@@ -59,10 +60,12 @@ func init() {
 	syncFieldsCmd.Flags().StringArrayVar(&issues, "issue", nil, "GitHub issue URL (can be specified multiple times)")
 	syncFieldsCmd.Flags().StringArrayVar(&fieldMappings, "field-mapping", nil, "Field mapping in the format 'source=target' (can be specified multiple times)")
 	syncFieldsCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging of HTTP traffic")
+	syncFieldsCmd.Flags().BoolVar(&autoDetectIssues, "auto-detect-issues", false, "Automatically detect and sync all issues present in both projects")
 
-	for _, flag := range []string{"source-project", "target-project", "issue", "field-mapping"} {
+	// Only require issue flag if auto-detect is disabled
+	requiredFlags := []string{"source-project", "target-project", "field-mapping"}
+	for _, flag := range requiredFlags {
 		if err := syncFieldsCmd.MarkFlagRequired(flag); err != nil {
-			// This should never happen as we're using predefined flags
 			panic(fmt.Sprintf("failed to mark flag %s as required: %v", flag, err))
 		}
 	}
@@ -100,6 +103,41 @@ func runSyncFields(cmd *cobra.Command, args []string) error {
 	} else {
 		ownerType = github.OwnerTypeOrg
 		ownerLogin = org
+	}
+
+	// If auto-detect is enabled, get the list of issues from both projects
+	if autoDetectIssues {
+		sourceIssues, err := service.GetProjectIssues(context.Background(), ownerType, ownerLogin, sourceProject)
+		if err != nil {
+			return fmt.Errorf("failed to get source project issues: %w", err)
+		}
+
+		targetIssues, err := service.GetProjectIssues(context.Background(), ownerType, ownerLogin, targetProject)
+		if err != nil {
+			return fmt.Errorf("failed to get target project issues: %w", err)
+		}
+
+		// Find intersection of issues
+		issueMap := make(map[string]bool)
+		for _, issue := range targetIssues {
+			issueMap[issue] = true
+		}
+
+		var commonIssues []string
+		for _, issue := range sourceIssues {
+			if issueMap[issue] {
+				commonIssues = append(commonIssues, issue)
+			}
+		}
+
+		if len(commonIssues) == 0 {
+			return fmt.Errorf("no common issues found between source and target projects")
+		}
+
+		slog.Info("found common issues", "count", len(commonIssues))
+		issues = commonIssues
+	} else if len(issues) == 0 {
+		return fmt.Errorf("no issues specified and --auto-detect-issues not enabled")
 	}
 
 	if err := service.SyncFields(context.Background(), ownerType, ownerLogin, sourceProject, targetProject, issues, mappings); err != nil {

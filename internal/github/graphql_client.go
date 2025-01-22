@@ -371,3 +371,31 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, ownerType OwnerT
 
 	return c.client.Mutate(ctx, &mutation, input, nil)
 }
+
+// GetProjectIssues implements the Client interface
+func (c *GraphQLClient) GetProjectIssues(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) ([]string, error) {
+	var project *ProjectV2
+	var err error
+
+	switch ownerType {
+	case OwnerTypeUser:
+		project, err = c.getUserProject(ctx, ownerLogin, projectNumber)
+	case OwnerTypeOrg:
+		project, err = c.getOrgProject(ctx, ownerLogin, projectNumber)
+	default:
+		return nil, fmt.Errorf("invalid owner type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	var issues []string
+	for _, item := range project.Items.Nodes {
+		if item.Content.TypeName == "Issue" {
+			issues = append(issues, item.Content.Issue.URL)
+		}
+	}
+
+	return issues, nil
+}

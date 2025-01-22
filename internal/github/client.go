@@ -36,4 +36,7 @@ type Client interface {
 
 	// UpdateProjectField updates a field value for an issue in a project
 	UpdateProjectField(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string, field ProjectField) error
+
+	// GetProjectIssues retrieves all issue URLs from a project
+	GetProjectIssues(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) ([]string, error)
 }
