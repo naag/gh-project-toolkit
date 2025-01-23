@@ -524,10 +524,12 @@ func (c *GraphQLClient) GetProjectIssues(ctx context.Context, projectID string) 
 	var afterCursor *string
 	var page int
 
+	slog.Info("loading project issues from GitHub")
+
 	// Fetch items with pagination
 	for {
 		page++
-		slog.Info("loading project issues from GitHub", "page", page)
+		slog.Debug("loading page of issues", "page", page)
 
 		variables := map[string]interface{}{
 			"projectID":   githubv4.ID(projectID),
@@ -538,14 +540,7 @@ func (c *GraphQLClient) GetProjectIssues(ctx context.Context, projectID string) 
 			return nil, fmt.Errorf("failed to query project: %w", err)
 		}
 
-		newItems := len(query.Node.Project.Items.Nodes)
 		items = append(items, query.Node.Project.Items.Nodes...)
-
-		slog.Debug("loaded page of issues",
-			"page", page,
-			"new_items", newItems,
-			"total_items", len(items),
-		)
 
 		if !query.Node.Project.Items.PageInfo.HasNextPage {
 			break
@@ -563,11 +558,7 @@ func (c *GraphQLClient) GetProjectIssues(ctx context.Context, projectID string) 
 		}
 	}
 
-	slog.Info("completed loading project issues",
-		"total_items", len(items),
-		"total_issues", len(issues),
-		"pages_loaded", page,
-	)
+	slog.Info("completed loading project issues", "total_issues", len(issues), "pages_loaded", page)
 	return issues, nil
 }
 
@@ -600,10 +591,12 @@ func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sou
 	var afterCursor *string
 	var page int
 
+	slog.Info("loading project data from GitHub")
+
 	// Fetch source project items with pagination
 	for {
 		page++
-		slog.Info("loading project data from GitHub", "page", page)
+		slog.Debug("loading page", "page", page)
 
 		variables := map[string]interface{}{
 			"sourceProjectID": githubv4.ID(sourceProjectID),
@@ -615,18 +608,8 @@ func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sou
 			return nil, nil, nil, nil, fmt.Errorf("failed to query projects: %w", err)
 		}
 
-		newSourceItems := len(query.SourceProject.Project.Items.Nodes)
-		newTargetItems := len(query.TargetProject.Project.Items.Nodes)
 		sourceItems = append(sourceItems, query.SourceProject.Project.Items.Nodes...)
 		targetItems = append(targetItems, query.TargetProject.Project.Items.Nodes...)
-
-		slog.Debug("loaded page of items",
-			"page", page,
-			"new_source_items", newSourceItems,
-			"new_target_items", newTargetItems,
-			"total_source_items", len(sourceItems),
-			"total_target_items", len(targetItems),
-		)
 
 		if !query.SourceProject.Project.Items.PageInfo.HasNextPage && !query.TargetProject.Project.Items.PageInfo.HasNextPage {
 			break
@@ -714,8 +697,6 @@ func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sou
 	}
 
 	slog.Info("completed loading project data",
-		"source_items", len(sourceItems),
-		"target_items", len(targetItems),
 		"source_issues", len(sourceIssues),
 		"target_issues", len(targetIssues),
 		"pages_loaded", page,
