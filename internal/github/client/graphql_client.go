@@ -26,13 +26,13 @@ type GraphQLClient struct {
 	}
 }
 
-// CustomDate is a custom date type that can parse GitHub's date format
-type CustomDate struct {
+// GithubDate is a custom date type that can parse GitHub's date format
+type GithubDate struct {
 	time.Time
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface
-func (d *CustomDate) UnmarshalJSON(data []byte) error {
+func (d *GithubDate) UnmarshalJSON(data []byte) error {
 	// Remove quotes
 	s := string(data)
 	s = s[1 : len(s)-1]
@@ -134,7 +134,7 @@ type (
 					Name string
 				} `graphql:"... on ProjectV2Field"`
 			}
-			Date *CustomDate `graphql:"date"`
+			Date *GithubDate `graphql:"date"`
 		} `graphql:"... on ProjectV2ItemFieldDateValue"`
 		// Single select field value
 		SingleSelectValue struct {
@@ -380,7 +380,7 @@ func (c *GraphQLClient) updateCacheFieldValue(project *ProjectV2, issueURL strin
 				switch fieldValue.TypeName {
 				case "ProjectV2ItemFieldDateValue":
 					if fieldValue.DateValue.Field.DateField.Name == field.Name {
-						project.Items.Nodes[i].Fields.Nodes[j].DateValue.Date = &CustomDate{Time: *field.Value.Date}
+						project.Items.Nodes[i].Fields.Nodes[j].DateValue.Date = &GithubDate{Time: *field.Value.Date}
 					}
 				case "ProjectV2ItemFieldSingleSelectValue":
 					if fieldValue.SingleSelectValue.Field.SingleSelectField.Name == field.Name {
