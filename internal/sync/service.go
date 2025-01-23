@@ -53,7 +53,11 @@ func (s *Service) SyncFields(ctx context.Context, ownerType github.OwnerType, ow
 		if len(issues) == 0 {
 			return fmt.Errorf("no common issues found between source and target projects")
 		}
-		slog.Info("found common issues", slog.Int("count", len(issues)))
+		slog.Info("found common issues",
+			"count", len(issues),
+			"source_issues", len(sourceIssues),
+			"target_issues", len(targetIssues),
+		)
 	}
 
 	// Process issues in batches to avoid too many concurrent requests

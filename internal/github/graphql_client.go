@@ -74,8 +74,12 @@ type ProjectV2 struct {
 		Nodes []ProjectV2FieldConfiguration
 	} `graphql:"fields(first: 100)"`
 	Items struct {
-		Nodes []ProjectV2Item
-	} `graphql:"items(first: 100)"`
+		Nodes    []ProjectV2Item
+		PageInfo struct {
+			HasNextPage bool
+			EndCursor   string
+		}
+	} `graphql:"items(first: 100, after: $afterCursor)"`
 }
 
 // GraphQL query types for GitHub's API
@@ -154,6 +158,7 @@ func (c *GraphQLClient) getOrgProject(ctx context.Context, orgName string, proje
 	variables := map[string]interface{}{
 		"login":         githubv4.String(orgName),
 		"projectNumber": githubv4.Int(projectNumber),
+		"afterCursor":   (*githubv4.String)(nil),
 	}
 
 	if err := c.client.Query(ctx, &query, variables); err != nil {
@@ -177,6 +182,7 @@ func (c *GraphQLClient) getUserProject(ctx context.Context, username string, pro
 	variables := map[string]interface{}{
 		"login":         githubv4.String(username),
 		"projectNumber": githubv4.Int(projectNumber),
+		"afterCursor":   (*githubv4.String)(nil),
 	}
 
 	if err := c.client.Query(ctx, &query, variables); err != nil {
@@ -493,55 +499,150 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, projectID string
 
 // GetProjectIssues implements the Client interface
 func (c *GraphQLClient) GetProjectIssues(ctx context.Context, projectID string) ([]string, error) {
+	type projectQuery struct {
+		Project struct {
+			Items struct {
+				Nodes    []ProjectV2Item
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+			} `graphql:"items(first: 100, after: $afterCursor)"`
+		} `graphql:"... on ProjectV2"`
+	}
+
 	var query struct {
-		Node struct {
-			Project ProjectV2 `graphql:"... on ProjectV2"`
-		} `graphql:"node(id: $projectID)"`
+		Node projectQuery `graphql:"node(id: $projectID)"`
 	}
 
-	variables := map[string]interface{}{
-		"projectID": githubv4.ID(projectID),
-	}
+	var items []ProjectV2Item
+	var afterCursor *string
 
-	if err := c.client.Query(ctx, &query, variables); err != nil {
-		return nil, fmt.Errorf("failed to query project: %w", err)
-	}
+	// Fetch items with pagination
+	for {
+		variables := map[string]interface{}{
+			"projectID":   githubv4.ID(projectID),
+			"afterCursor": (*githubv4.String)(afterCursor),
+		}
 
-	project := &query.Node.Project
+		if err := c.client.Query(ctx, &query, variables); err != nil {
+			return nil, fmt.Errorf("failed to query project: %w", err)
+		}
+
+		items = append(items, query.Node.Project.Items.Nodes...)
+
+		if !query.Node.Project.Items.PageInfo.HasNextPage {
+			break
+		}
+
+		cursor := query.Node.Project.Items.PageInfo.EndCursor
+		afterCursor = &cursor
+	}
 
 	var issues []string
-	for _, item := range project.Items.Nodes {
+	for _, item := range items {
 		if item.Content.TypeName == "Issue" {
 			issues = append(issues, item.Content.Issue.URL)
 		}
 	}
 
+	slog.Debug("fetched project issues", "count", len(issues))
 	return issues, nil
 }
 
 // GetProjectFieldConfigsAndIssues implements the Client interface
 func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sourceProjectID string, targetProjectID string) (sourceConfigs []ProjectFieldConfig, targetConfigs []ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error) {
+	type projectQuery struct {
+		Project struct {
+			ID     string
+			Fields struct {
+				Nodes []ProjectV2FieldConfiguration
+			} `graphql:"fields(first: 100)"`
+			Items struct {
+				Nodes    []ProjectV2Item
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+			} `graphql:"items(first: 100, after: $afterCursor)"`
+		} `graphql:"... on ProjectV2"`
+	}
+
 	var query struct {
-		SourceProject struct {
-			Project ProjectV2 `graphql:"... on ProjectV2"`
-		} `graphql:"sourceProject: node(id: $sourceProjectID)"`
-		TargetProject struct {
-			Project ProjectV2 `graphql:"... on ProjectV2"`
-		} `graphql:"targetProject: node(id: $targetProjectID)"`
+		SourceProject projectQuery `graphql:"sourceProject: node(id: $sourceProjectID)"`
+		TargetProject projectQuery `graphql:"targetProject: node(id: $targetProjectID)"`
 	}
 
-	variables := map[string]interface{}{
-		"sourceProjectID": githubv4.ID(sourceProjectID),
-		"targetProjectID": githubv4.ID(targetProjectID),
+	// Initialize variables for pagination
+	var sourceItems []ProjectV2Item
+	var targetItems []ProjectV2Item
+	var afterCursor *string
+
+	// Fetch source project items with pagination
+	for {
+		variables := map[string]interface{}{
+			"sourceProjectID": githubv4.ID(sourceProjectID),
+			"targetProjectID": githubv4.ID(targetProjectID),
+			"afterCursor":     (*githubv4.String)(afterCursor),
+		}
+
+		if err := c.client.Query(ctx, &query, variables); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to query projects: %w", err)
+		}
+
+		sourceItems = append(sourceItems, query.SourceProject.Project.Items.Nodes...)
+		targetItems = append(targetItems, query.TargetProject.Project.Items.Nodes...)
+
+		if !query.SourceProject.Project.Items.PageInfo.HasNextPage && !query.TargetProject.Project.Items.PageInfo.HasNextPage {
+			break
+		}
+
+		// Use the end cursor from either project that has more pages
+		if query.SourceProject.Project.Items.PageInfo.HasNextPage {
+			cursor := query.SourceProject.Project.Items.PageInfo.EndCursor
+			afterCursor = &cursor
+		} else if query.TargetProject.Project.Items.PageInfo.HasNextPage {
+			cursor := query.TargetProject.Project.Items.PageInfo.EndCursor
+			afterCursor = &cursor
+		}
 	}
 
-	if err := c.client.Query(ctx, &query, variables); err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to query projects: %w", err)
+	// Cache the project data with all items
+	c.cache.sourceProject = &ProjectV2{
+		ID: query.SourceProject.Project.ID,
+		Fields: struct {
+			Nodes []ProjectV2FieldConfiguration
+		}{
+			Nodes: query.SourceProject.Project.Fields.Nodes,
+		},
+		Items: struct {
+			Nodes    []ProjectV2Item
+			PageInfo struct {
+				HasNextPage bool
+				EndCursor   string
+			}
+		}{
+			Nodes: sourceItems,
+		},
 	}
 
-	// Cache the project data
-	c.cache.sourceProject = &query.SourceProject.Project
-	c.cache.targetProject = &query.TargetProject.Project
+	c.cache.targetProject = &ProjectV2{
+		ID: query.TargetProject.Project.ID,
+		Fields: struct {
+			Nodes []ProjectV2FieldConfiguration
+		}{
+			Nodes: query.TargetProject.Project.Fields.Nodes,
+		},
+		Items: struct {
+			Nodes    []ProjectV2Item
+			PageInfo struct {
+				HasNextPage bool
+				EndCursor   string
+			}
+		}{
+			Nodes: targetItems,
+		},
+	}
 
 	// Convert field configurations
 	for _, field := range query.SourceProject.Project.Fields.Nodes {
@@ -562,18 +663,25 @@ func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sou
 		targetConfigs = append(targetConfigs, config)
 	}
 
-	// Get issues
-	for _, item := range query.SourceProject.Project.Items.Nodes {
+	// Get issues from all fetched items
+	for _, item := range sourceItems {
 		if item.Content.TypeName == "Issue" {
 			sourceIssues = append(sourceIssues, item.Content.Issue.URL)
 		}
 	}
 
-	for _, item := range query.TargetProject.Project.Items.Nodes {
+	for _, item := range targetItems {
 		if item.Content.TypeName == "Issue" {
 			targetIssues = append(targetIssues, item.Content.Issue.URL)
 		}
 	}
+
+	slog.Debug("fetched project items",
+		"source_items", len(sourceItems),
+		"target_items", len(targetItems),
+		"source_issues", len(sourceIssues),
+		"target_issues", len(targetIssues),
+	)
 
 	return sourceConfigs, targetConfigs, sourceIssues, targetIssues, nil
 }
