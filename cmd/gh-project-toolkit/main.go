@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/naag/gh-project-toolkit/internal/github"
+	"github.com/naag/gh-project-toolkit/internal/github/projecturl"
 	"github.com/naag/gh-project-toolkit/internal/sync"
 )
 
@@ -41,21 +42,12 @@ var syncFieldsCmd = &cobra.Command{
 	Use:          "sync-fields",
 	Short:        "Sync fields between GitHub project boards",
 	SilenceUsage: true,
-	PreRunE: func(cmd *cobra.Command, args []string) error {
-		// Validate that exactly one of --org or --user is specified
-		if (org == "") == (user == "") {
-			return fmt.Errorf("exactly one of --org or --user must be specified")
-		}
-		return nil
-	},
-	RunE: runSyncFields,
+	RunE:         runSyncFields,
 }
 
 var (
-	org              string
-	user             string
-	sourceProject    int
-	targetProject    int
+	sourceProjectURL string
+	targetProjectURL string
 	issues           []string
 	fieldMappings    []string
 	verboseLevel     int
@@ -65,17 +57,15 @@ var (
 func init() {
 	rootCmd.AddCommand(syncFieldsCmd)
 
-	syncFieldsCmd.Flags().StringVar(&org, "org", "", "GitHub organization name (mutually exclusive with --user)")
-	syncFieldsCmd.Flags().StringVar(&user, "user", "", "GitHub username for user-scoped projects (mutually exclusive with --org)")
-	syncFieldsCmd.Flags().IntVar(&sourceProject, "source-project", 0, "Source project number")
-	syncFieldsCmd.Flags().IntVar(&targetProject, "target-project", 0, "Target project number")
+	syncFieldsCmd.Flags().StringVar(&sourceProjectURL, "source", "", "Source project URL (e.g., https://github.com/orgs/org/projects/123)")
+	syncFieldsCmd.Flags().StringVar(&targetProjectURL, "target", "", "Target project URL (e.g., https://github.com/users/user/projects/456)")
 	syncFieldsCmd.Flags().StringArrayVar(&issues, "issue", nil, "GitHub issue URL (can be specified multiple times)")
 	syncFieldsCmd.Flags().StringArrayVar(&fieldMappings, "field-mapping", nil, "Field mapping in the format 'source=target' (can be specified multiple times)")
 	syncFieldsCmd.Flags().CountVarP(&verboseLevel, "verbose", "v", "Verbosity level (-v for debug logs, -vv for debug logs and HTTP traffic)")
 	syncFieldsCmd.Flags().BoolVar(&autoDetectIssues, "auto-detect-issues", false, "Automatically detect and sync all issues present in both projects")
 
-	// Only require issue flag if auto-detect is disabled
-	requiredFlags := []string{"source-project", "target-project", "field-mapping"}
+	// Mark required flags
+	requiredFlags := []string{"source", "target", "field-mapping"}
 	for _, flag := range requiredFlags {
 		if err := syncFieldsCmd.MarkFlagRequired(flag); err != nil {
 			panic(fmt.Sprintf("failed to mark flag %s as required: %v", flag, err))
@@ -106,15 +96,15 @@ func runSyncFields(cmd *cobra.Command, args []string) error {
 	// Create sync service
 	service := sync.NewService(client)
 
-	// Determine owner type and login
-	var ownerType github.OwnerType
-	var ownerLogin string
-	if user != "" {
-		ownerType = github.OwnerTypeUser
-		ownerLogin = user
-	} else {
-		ownerType = github.OwnerTypeOrg
-		ownerLogin = org
+	// Parse project URLs
+	sourceInfo, err := projecturl.Parse(sourceProjectURL)
+	if err != nil {
+		return fmt.Errorf("invalid source project URL: %w", err)
+	}
+
+	targetInfo, err := projecturl.Parse(targetProjectURL)
+	if err != nil {
+		return fmt.Errorf("invalid target project URL: %w", err)
 	}
 
 	// If no issues are specified and auto-detect is not enabled, return an error
@@ -123,7 +113,7 @@ func runSyncFields(cmd *cobra.Command, args []string) error {
 	}
 
 	// Call SyncFields with empty issues slice if auto-detect is enabled
-	if err := service.SyncFields(context.Background(), ownerType, ownerLogin, sourceProject, targetProject, issues, mappings); err != nil {
+	if err := service.SyncFields(context.Background(), sourceInfo.OwnerType, sourceInfo.OwnerLogin, sourceInfo.ProjectNumber, targetInfo.ProjectNumber, issues, mappings); err != nil {
 		return fmt.Errorf("failed to sync fields: %w", err)
 	}
 
