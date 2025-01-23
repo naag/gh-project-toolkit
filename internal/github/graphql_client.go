@@ -434,7 +434,7 @@ func (c *GraphQLClient) executeFieldUpdate(ctx context.Context, input githubv4.U
 }
 
 // UpdateProjectField implements the Client interface
-func (c *GraphQLClient) UpdateProjectField(ctx context.Context, projectID string, issueURL string, field ProjectField) error {
+func (c *GraphQLClient) UpdateProjectField(ctx context.Context, projectID string, issueURL string, field ProjectField, dryRun bool) error {
 	// Get project from cache or fetch it
 	project := c.getProjectFromCache(projectID)
 	if project == nil {
@@ -456,32 +456,35 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, projectID string
 		return nil
 	}
 
-	// Log the field update
-	oldValue, newValue := c.getFieldUpdateValues(currentValue, field)
-	slog.Debug("updating field value",
-		"field", field.Name,
-		"old", oldValue,
-		"new", newValue,
-	)
-
 	// Find the field configuration
 	fieldID, isDateField, err := c.findProjectField(project, field.Name)
 	if err != nil {
 		return err
 	}
 
-	// Construct and execute the mutation
-	input, err := c.constructMutationInput(project.ID, itemID, fieldID, field, isDateField)
-	if err != nil {
-		return err
-	}
+	// Log the field update
+	oldValue, newValue := c.getFieldUpdateValues(currentValue, field)
+	slog.Debug("updating field value",
+		"field", field.Name,
+		"old", oldValue,
+		"new", newValue,
+		"dry_run", dryRun,
+	)
 
-	if err := c.executeFieldUpdate(ctx, input); err != nil {
-		return err
-	}
+	if !dryRun {
+		// Construct and execute the mutation
+		input, err := c.constructMutationInput(project.ID, itemID, fieldID, field, isDateField)
+		if err != nil {
+			return err
+		}
 
-	// Update the cache with the new value
-	c.updateCacheFieldValue(project, issueURL, field)
+		if err := c.executeFieldUpdate(ctx, input); err != nil {
+			return err
+		}
+
+		// Update the cache with the new value
+		c.updateCacheFieldValue(project, issueURL, field)
+	}
 
 	return nil
 }

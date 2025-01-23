@@ -10,7 +10,7 @@ import (
 type Client struct {
 	GetProjectIDFunc                    func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int) (string, error)
 	GetProjectFieldsFunc                func(ctx context.Context, projectID string, issueURL string) ([]github.ProjectField, error)
-	UpdateProjectFieldFunc              func(ctx context.Context, projectID string, issueURL string, field github.ProjectField) error
+	UpdateProjectFieldFunc              func(ctx context.Context, projectID string, issueURL string, field github.ProjectField, dryRun bool) error
 	GetProjectIssuesFunc                func(ctx context.Context, projectID string) ([]string, error)
 	GetProjectFieldConfigsAndIssuesFunc func(ctx context.Context, sourceProjectID string, targetProjectID string) (sourceConfigs []github.ProjectFieldConfig, targetConfigs []github.ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error)
 	GetProjectFieldValuesFunc           func(ctx context.Context, projectID string, issueURL string, fieldConfigs []github.ProjectFieldConfig) ([]github.ProjectField, error)
@@ -33,9 +33,9 @@ func (c *Client) GetProjectFields(ctx context.Context, projectID string, issueUR
 }
 
 // UpdateProjectField implements the github.Client interface
-func (c *Client) UpdateProjectField(ctx context.Context, projectID string, issueURL string, field github.ProjectField) error {
+func (c *Client) UpdateProjectField(ctx context.Context, projectID string, issueURL string, field github.ProjectField, dryRun bool) error {
 	if c.UpdateProjectFieldFunc != nil {
-		return c.UpdateProjectFieldFunc(ctx, projectID, issueURL, field)
+		return c.UpdateProjectFieldFunc(ctx, projectID, issueURL, field, dryRun)
 	}
 	return nil
 }

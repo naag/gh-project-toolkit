@@ -52,6 +52,7 @@ var (
 	fieldMappings    []string
 	verboseLevel     int
 	autoDetectIssues bool
+	dryRun           bool
 )
 
 func init() {
@@ -63,6 +64,7 @@ func init() {
 	syncFieldsCmd.Flags().StringArrayVar(&fieldMappings, "field-mapping", nil, "Field mapping in the format 'source=target' (can be specified multiple times)")
 	syncFieldsCmd.Flags().CountVarP(&verboseLevel, "verbose", "v", "Verbosity level (-v for debug logs, -vv for debug logs and HTTP traffic)")
 	syncFieldsCmd.Flags().BoolVar(&autoDetectIssues, "auto-detect-issues", false, "Automatically detect and sync all issues present in both projects")
+	syncFieldsCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run in dry run mode (no mutations will be performed)")
 
 	// Mark required flags
 	requiredFlags := []string{"source", "target", "field-mapping"}
@@ -94,7 +96,7 @@ func runSyncFields(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create sync service
-	service := sync.NewService(client)
+	service := sync.NewService(client, dryRun)
 
 	// Parse project URLs
 	sourceInfo, err := projecturl.Parse(sourceProjectURL)
@@ -117,6 +119,10 @@ func runSyncFields(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to sync fields: %w", err)
 	}
 
-	slog.Info("sync completed successfully")
+	if dryRun {
+		slog.Info("dry run completed successfully")
+	} else {
+		slog.Info("sync completed successfully")
+	}
 	return nil
 }

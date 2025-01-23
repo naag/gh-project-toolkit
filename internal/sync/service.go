@@ -11,11 +11,15 @@ import (
 // Service provides functionality for syncing project fields
 type Service struct {
 	client github.Client
+	dryRun bool
 }
 
 // NewService creates a new sync service
-func NewService(client github.Client) *Service {
-	return &Service{client: client}
+func NewService(client github.Client, dryRun bool) *Service {
+	return &Service{
+		client: client,
+		dryRun: dryRun,
+	}
 }
 
 // FieldMapping represents a mapping between source and target field names
@@ -148,7 +152,7 @@ func (s *Service) applyFieldMappings(ctx context.Context, targetProjectID string
 				}
 
 				// Update field in target project
-				if err := s.client.UpdateProjectField(ctx, targetProjectID, issueURL, targetField); err != nil {
+				if err := s.client.UpdateProjectField(ctx, targetProjectID, issueURL, targetField, s.dryRun); err != nil {
 					return fmt.Errorf("failed to update field for %s: %w", issueURL, err)
 				}
 				break
