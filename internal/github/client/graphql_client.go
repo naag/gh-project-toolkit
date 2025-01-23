@@ -241,7 +241,7 @@ func (c *GraphQLClient) GetProjectFields(ctx context.Context, projectID string, 
 			field = github.ProjectField{
 				ID:   fieldValue.DateValue.Field.DateField.ID,
 				Name: fieldValue.DateValue.Field.DateField.Name,
-				Value: github.FieldValue{
+				Value: github.ProjectFieldValue{
 					Date: &fieldValue.DateValue.Date.Time,
 				},
 			}
@@ -249,7 +249,7 @@ func (c *GraphQLClient) GetProjectFields(ctx context.Context, projectID string, 
 			field = github.ProjectField{
 				ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
 				Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
-				Value: github.FieldValue{
+				Value: github.ProjectFieldValue{
 					Text: fieldValue.SingleSelectValue.Name,
 				},
 			}
@@ -765,7 +765,7 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID str
 			field = github.ProjectField{
 				ID:   fieldValue.DateValue.Field.DateField.ID,
 				Name: fieldValue.DateValue.Field.DateField.Name,
-				Value: github.FieldValue{
+				Value: github.ProjectFieldValue{
 					Date: &fieldValue.DateValue.Date.Time,
 				},
 			}
@@ -773,7 +773,7 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID str
 			field = github.ProjectField{
 				ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
 				Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
-				Value: github.FieldValue{
+				Value: github.ProjectFieldValue{
 					Text: fieldValue.SingleSelectValue.Name,
 				},
 			}
@@ -787,17 +787,16 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID str
 	return fields, nil
 }
 
-// GetProjectID implements the Client interface
 func (c *GraphQLClient) GetProjectID(ctx context.Context, projectInfo *github.ProjectInfo) (string, error) {
-	slog.Info("loading project metadata from GitHub")
+	slog.Info("getting project ID", "owner_type", projectInfo.OwnerType, "owner_login", projectInfo.OwnerLogin, "project_number", projectInfo.ProjectNumber)
 
 	var project *ProjectV2
 	var err error
 
 	switch projectInfo.OwnerType {
-	case github.OwnerTypeUser:
+	case github.ProjectOwnerTypeUser:
 		project, err = c.getUserProject(ctx, projectInfo.OwnerLogin, projectInfo.ProjectNumber)
-	case github.OwnerTypeOrg:
+	case github.ProjectOwnerTypeOrg:
 		project, err = c.getOrgProject(ctx, projectInfo.OwnerLogin, projectInfo.ProjectNumber)
 	default:
 		return "", fmt.Errorf("invalid owner type")
@@ -810,8 +809,7 @@ func (c *GraphQLClient) GetProjectID(ctx context.Context, projectInfo *github.Pr
 	return project.ID, nil
 }
 
-// GetIssueTitle implements the Client interface
-func (c *GraphQLClient) GetIssueTitle(ctx context.Context, issueURL string) (string, error) {
+func (c *GraphQLClient) GetIssueTitle(_ctx context.Context, issueURL string) (string, error) {
 	if c.cache.sourceProject != nil && c.cache.targetProject != nil {
 		return "", fmt.Errorf("issue %s not found in cache", issueURL)
 	}

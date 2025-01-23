@@ -18,7 +18,7 @@ func TestParseProjectURL(t *testing.T) {
 			name: "valid org project URL",
 			url:  "https://github.com/orgs/testorg/projects/123",
 			want: &github.ProjectInfo{
-				OwnerType:     github.OwnerTypeOrg,
+				OwnerType:     github.ProjectOwnerTypeOrg,
 				OwnerLogin:    "testorg",
 				ProjectNumber: 123,
 			},
@@ -27,7 +27,7 @@ func TestParseProjectURL(t *testing.T) {
 			name: "valid user project URL",
 			url:  "https://github.com/users/testuser/projects/456",
 			want: &github.ProjectInfo{
-				OwnerType:     github.OwnerTypeUser,
+				OwnerType:     github.ProjectOwnerTypeUser,
 				OwnerLogin:    "testuser",
 				ProjectNumber: 456,
 			},

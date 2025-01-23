@@ -27,12 +27,12 @@ func ParseProjectURL(projectURL string) (*github.ProjectInfo, error) {
 	}
 
 	// Check if it's an org or user project
-	var ownerType github.OwnerType
+	var ownerType github.ProjectOwnerType
 	switch parts[0] {
 	case "orgs":
-		ownerType = github.OwnerTypeOrg
+		ownerType = github.ProjectOwnerTypeOrg
 	case "users":
-		ownerType = github.OwnerTypeUser
+		ownerType = github.ProjectOwnerTypeUser
 	default:
 		return nil, fmt.Errorf("invalid owner type in URL: %s", parts[0])
 	}

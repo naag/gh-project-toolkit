@@ -35,7 +35,7 @@ func TestSyncFieldsWithoutDryRun(t *testing.T) {
 					{
 						ID:   "1",
 						Name: "start",
-						Value: github.FieldValue{
+						Value: github.ProjectFieldValue{
 							Date: &now,
 						},
 					},
@@ -101,7 +101,7 @@ func TestSyncFieldsWithDryRun(t *testing.T) {
 					{
 						ID:   "1",
 						Name: "start",
-						Value: github.FieldValue{
+						Value: github.ProjectFieldValue{
 							Date: &now,
 						},
 					},
