@@ -154,23 +154,26 @@ func (c *GraphQLClient) getOrgProject(ctx context.Context, orgName string, proje
 		return nil, fmt.Errorf("invalid project number: %d", projectNumber)
 	}
 
+	slog.Debug("loading organization project ID", "org", orgName, "number", projectNumber)
+
 	var query struct {
 		Organization struct {
-			ProjectV2 ProjectV2 `graphql:"projectV2(number: $projectNumber)"`
+			Project struct {
+				ID string
+			} `graphql:"projectV2(number: $projectNumber)"`
 		} `graphql:"organization(login: $login)"`
 	}
 
 	variables := map[string]interface{}{
 		"login":         githubv4.String(orgName),
 		"projectNumber": githubv4.Int(projectNumber),
-		"afterCursor":   (*githubv4.String)(nil),
 	}
 
 	if err := c.client.Query(ctx, &query, variables); err != nil {
 		return nil, fmt.Errorf("failed to query organization project: %w", err)
 	}
 
-	return &query.Organization.ProjectV2, nil
+	return &ProjectV2{ID: query.Organization.Project.ID}, nil
 }
 
 func (c *GraphQLClient) getUserProject(ctx context.Context, username string, projectNumber int) (*ProjectV2, error) {
@@ -178,23 +181,26 @@ func (c *GraphQLClient) getUserProject(ctx context.Context, username string, pro
 		return nil, fmt.Errorf("invalid project number: %d", projectNumber)
 	}
 
+	slog.Debug("loading user project ID", "user", username, "number", projectNumber)
+
 	var query struct {
 		User struct {
-			ProjectV2 ProjectV2 `graphql:"projectV2(number: $projectNumber)"`
+			Project struct {
+				ID string
+			} `graphql:"projectV2(number: $projectNumber)"`
 		} `graphql:"user(login: $login)"`
 	}
 
 	variables := map[string]interface{}{
 		"login":         githubv4.String(username),
 		"projectNumber": githubv4.Int(projectNumber),
-		"afterCursor":   (*githubv4.String)(nil),
 	}
 
 	if err := c.client.Query(ctx, &query, variables); err != nil {
 		return nil, fmt.Errorf("failed to query user project: %w", err)
 	}
 
-	return &query.User.ProjectV2, nil
+	return &ProjectV2{ID: query.User.Project.ID}, nil
 }
 
 // GetProjectFields implements the Client interface
@@ -781,6 +787,8 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID str
 
 // GetProjectID implements the Client interface
 func (c *GraphQLClient) GetProjectID(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) (string, error) {
+	slog.Info("loading project metadata from GitHub")
+
 	var project *ProjectV2
 	var err error
 
