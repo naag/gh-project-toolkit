@@ -810,19 +810,19 @@ func (c *GraphQLClient) GetProjectID(ctx context.Context, projectInfo *github.Pr
 }
 
 func (c *GraphQLClient) GetIssueTitle(_ctx context.Context, issueURL string) (string, error) {
-	if c.cache.sourceProject != nil && c.cache.targetProject != nil {
-		return "", fmt.Errorf("issue %s not found in cache", issueURL)
-	}
-
-	for _, item := range c.cache.sourceProject.Items.Nodes {
-		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
-			return item.Content.Issue.Title, nil
+	if c.cache.sourceProject != nil {
+		for _, item := range c.cache.sourceProject.Items.Nodes {
+			if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
+				return item.Content.Issue.Title, nil
+			}
 		}
 	}
 
-	for _, item := range c.cache.targetProject.Items.Nodes {
-		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
-			return item.Content.Issue.Title, nil
+	if c.cache.targetProject != nil {
+		for _, item := range c.cache.targetProject.Items.Nodes {
+			if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
+				return item.Content.Issue.Title, nil
+			}
 		}
 	}
 
