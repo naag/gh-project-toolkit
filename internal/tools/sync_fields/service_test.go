@@ -11,8 +11,8 @@ import (
 func TestSyncFieldsWithoutDryRun(t *testing.T) {
 	now := time.Now()
 	mockClient := &github.MockClient{
-		GetProjectIDFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int) (string, error) {
-			if projectNumber == 824 {
+		GetProjectIDFunc: func(ctx context.Context, projectInfo *github.ProjectInfo) (string, error) {
+			if projectInfo.ProjectNumber == 824 {
 				return "project_1", nil
 			}
 			return "project_2", nil
@@ -63,12 +63,10 @@ func TestSyncFieldsWithoutDryRun(t *testing.T) {
 
 	err := service.SyncFields(
 		context.Background(),
-		github.OwnerTypeOrg,
-		"myorg",
-		824,
-		825,
+		"https://github.com/orgs/myorg/projects/824",
+		"https://github.com/orgs/myorg/projects/825",
 		[]string{"https://github.com/org/repo/issues/1"},
-		[]FieldMapping{{SourceField: "start", TargetField: "Start date"}},
+		[]string{"start=Start date"},
 	)
 
 	if err != nil {
@@ -79,8 +77,8 @@ func TestSyncFieldsWithoutDryRun(t *testing.T) {
 func TestSyncFieldsWithDryRun(t *testing.T) {
 	now := time.Now()
 	mockClient := &github.MockClient{
-		GetProjectIDFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int) (string, error) {
-			if projectNumber == 824 {
+		GetProjectIDFunc: func(ctx context.Context, projectInfo *github.ProjectInfo) (string, error) {
+			if projectInfo.ProjectNumber == 824 {
 				return "project_1", nil
 			}
 			return "project_2", nil
@@ -131,12 +129,10 @@ func TestSyncFieldsWithDryRun(t *testing.T) {
 
 	err := service.SyncFields(
 		context.Background(),
-		github.OwnerTypeOrg,
-		"myorg",
-		824,
-		825,
+		"https://github.com/orgs/myorg/projects/824",
+		"https://github.com/orgs/myorg/projects/825",
 		[]string{"https://github.com/org/repo/issues/1"},
-		[]FieldMapping{{SourceField: "start", TargetField: "Start date"}},
+		[]string{"start=Start date"},
 	)
 
 	if err != nil {

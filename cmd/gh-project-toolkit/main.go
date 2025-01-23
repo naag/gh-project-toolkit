@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/naag/gh-project-toolkit/internal/github"
-	"github.com/naag/gh-project-toolkit/internal/github/projecturl"
 	"github.com/naag/gh-project-toolkit/internal/tools/sync_fields"
 )
 
@@ -75,46 +73,18 @@ func init() {
 }
 
 func runSyncFields(cmd *cobra.Command, args []string) error {
-	// Parse field mappings
-	mappings := make([]sync_fields.FieldMapping, 0, len(fieldMappings))
-	for _, mapping := range fieldMappings {
-		parts := strings.Split(mapping, "=")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid field mapping format: %s", mapping)
-		}
-		mappings = append(mappings, sync_fields.FieldMapping{
-			SourceField: strings.TrimSpace(parts[0]),
-			TargetField: strings.TrimSpace(parts[1]),
-		})
-	}
-
-	// Initialize GitHub client
 	client, err := github.NewGraphQLClient(verboseLevel >= 2)
 	if err != nil {
 		return fmt.Errorf("failed to initialize GitHub client: %w", err)
 	}
 
-	// Create sync service
 	service := sync_fields.NewService(client, dryRun)
 
-	// Parse project URLs
-	sourceInfo, err := projecturl.Parse(sourceProjectURL)
-	if err != nil {
-		return fmt.Errorf("invalid source project URL: %w", err)
-	}
-
-	targetInfo, err := projecturl.Parse(targetProjectURL)
-	if err != nil {
-		return fmt.Errorf("invalid target project URL: %w", err)
-	}
-
-	// If no issues are specified and auto-detect is not enabled, return an error
 	if len(issues) == 0 && !autoDetectIssues {
 		return fmt.Errorf("no issues specified and --auto-detect-issues not enabled")
 	}
 
-	// Call SyncFields with empty issues slice if auto-detect is enabled
-	if err := service.SyncFields(context.Background(), sourceInfo.OwnerType, sourceInfo.OwnerLogin, sourceInfo.ProjectNumber, targetInfo.ProjectNumber, issues, mappings); err != nil {
+	if err := service.SyncFields(context.Background(), sourceProjectURL, targetProjectURL, issues, fieldMappings); err != nil {
 		return fmt.Errorf("failed to sync fields: %w", err)
 	}
 

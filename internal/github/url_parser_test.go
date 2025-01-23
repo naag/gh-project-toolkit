@@ -1,13 +1,12 @@
-package projecturl
+package github
 
 import (
 	"testing"
 
-	"github.com/naag/gh-project-toolkit/internal/github"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParse(t *testing.T) {
+func TestParseProjectURL(t *testing.T) {
 	tests := []struct {
 		name    string
 		url     string
@@ -18,7 +17,7 @@ func TestParse(t *testing.T) {
 			name: "valid org project URL",
 			url:  "https://github.com/orgs/testorg/projects/123",
 			want: &ProjectInfo{
-				OwnerType:     github.OwnerTypeOrg,
+				OwnerType:     OwnerTypeOrg,
 				OwnerLogin:    "testorg",
 				ProjectNumber: 123,
 			},
@@ -27,7 +26,7 @@ func TestParse(t *testing.T) {
 			name: "valid user project URL",
 			url:  "https://github.com/users/testuser/projects/456",
 			want: &ProjectInfo{
-				OwnerType:     github.OwnerTypeUser,
+				OwnerType:     OwnerTypeUser,
 				OwnerLogin:    "testuser",
 				ProjectNumber: 456,
 			},
@@ -61,7 +60,7 @@ func TestParse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Parse(tt.url)
+			got, err := ParseProjectURL(tt.url)
 			if tt.wantErr != "" {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)

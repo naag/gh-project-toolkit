@@ -22,32 +22,28 @@ func NewService(client github.Client, dryRun bool) *Service {
 	}
 }
 
-// FieldMapping represents a mapping between source and target field names
-type FieldMapping struct {
-	SourceField string
-	TargetField string
-}
-
-// SyncFields syncs field values from source project to target project
-func (s *Service) SyncFields(ctx context.Context, ownerType github.OwnerType, ownerLogin string, sourceProject, targetProject int, issues []string, mappings []FieldMapping) error {
-	// First, get the project IDs
-	sourceProjectID, err := s.client.GetProjectID(ctx, ownerType, ownerLogin, sourceProject)
+// SyncFields synchronizes field values between two GitHub projects for the specified issues
+// using the provided field mappings
+func (s *Service) SyncFields(ctx context.Context, sourceProjectURL, targetProjectURL string, issues []string, fieldMappings []string) error {
+	// Parse project URLs and field mappings
+	sourceProject, targetProject, mappings, err := s.parseInputs(sourceProjectURL, targetProjectURL, fieldMappings)
 	if err != nil {
-		return fmt.Errorf("failed to get source project ID: %w", err)
+		return err
 	}
 
-	targetProjectID, err := s.client.GetProjectID(ctx, ownerType, ownerLogin, targetProject)
+	// Get project IDs
+	sourceProjectID, targetProjectID, err := s.getProjectIDs(ctx, sourceProject, targetProject)
 	if err != nil {
-		return fmt.Errorf("failed to get target project ID: %w", err)
+		return err
 	}
 
-	// Get field configurations and issues for both projects
+	// Get field configurations and issues
 	sourceFieldConfigs, targetFieldConfigs, sourceIssues, targetIssues, err := s.client.GetProjectFieldConfigsAndIssues(ctx, sourceProjectID, targetProjectID)
 	if err != nil {
 		return fmt.Errorf("failed to get project field configs and issues: %w", err)
 	}
 
-	// If no issues were provided, use the common issues from both projects
+	// If no issues were provided, find common issues
 	if len(issues) == 0 {
 		issues = findCommonIssues(sourceIssues, targetIssues)
 		if len(issues) == 0 {
@@ -60,7 +56,46 @@ func (s *Service) SyncFields(ctx context.Context, ownerType github.OwnerType, ow
 		)
 	}
 
-	// Process issues in batches to avoid too many concurrent requests
+	return s.processBatches(ctx, sourceProjectID, targetProjectID, issues, sourceFieldConfigs, targetFieldConfigs, mappings)
+}
+
+// parseInputs parses and validates the input URLs and field mappings
+func (s *Service) parseInputs(sourceProjectURL, targetProjectURL string, fieldMappings []string) (*github.ProjectInfo, *github.ProjectInfo, []FieldMapping, error) {
+	sourceProject, err := github.ParseProjectURL(sourceProjectURL)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid source project URL: %w", err)
+	}
+
+	targetProject, err := github.ParseProjectURL(targetProjectURL)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid target project URL: %w", err)
+	}
+
+	mappings, err := ParseFieldMappings(fieldMappings)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse field mappings: %w", err)
+	}
+
+	return sourceProject, targetProject, mappings, nil
+}
+
+// getProjectIDs retrieves the project IDs for both source and target projects
+func (s *Service) getProjectIDs(ctx context.Context, sourceProject, targetProject *github.ProjectInfo) (string, string, error) {
+	sourceProjectID, err := s.client.GetProjectID(ctx, sourceProject)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get source project ID: %w", err)
+	}
+
+	targetProjectID, err := s.client.GetProjectID(ctx, targetProject)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get target project ID: %w", err)
+	}
+
+	return sourceProjectID, targetProjectID, nil
+}
+
+// processBatches processes issues in batches to avoid too many concurrent requests
+func (s *Service) processBatches(ctx context.Context, sourceProjectID, targetProjectID string, issues []string, sourceFieldConfigs, targetFieldConfigs []github.ProjectFieldConfig, mappings []FieldMapping) error {
 	batchSize := 10
 	for i := 0; i < len(issues); i += batchSize {
 		end := i + batchSize

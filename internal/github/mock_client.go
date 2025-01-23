@@ -6,7 +6,7 @@ import (
 
 // MockClient implements MockClient interface for testing
 type MockClient struct {
-	GetProjectIDFunc                    func(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) (string, error)
+	GetProjectIDFunc                    func(ctx context.Context, projectInfo *ProjectInfo) (string, error)
 	GetProjectFieldsFunc                func(ctx context.Context, projectID string, issueURL string) ([]ProjectField, error)
 	UpdateProjectFieldFunc              func(ctx context.Context, projectID string, issueURL string, field ProjectField, dryRun bool) error
 	GetProjectIssuesFunc                func(ctx context.Context, projectID string) ([]string, error)
@@ -16,9 +16,9 @@ type MockClient struct {
 }
 
 // GetProjectID implements the Client interface
-func (c *MockClient) GetProjectID(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) (string, error) {
+func (c *MockClient) GetProjectID(ctx context.Context, projectInfo *ProjectInfo) (string, error) {
 	if c.GetProjectIDFunc != nil {
-		return c.GetProjectIDFunc(ctx, ownerType, ownerLogin, projectNumber)
+		return c.GetProjectIDFunc(ctx, projectInfo)
 	}
 	return "", nil
 }

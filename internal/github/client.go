@@ -39,7 +39,7 @@ const (
 // Client defines the interface for interacting with GitHub
 type Client interface {
 	// GetProjectID retrieves the globally unique node ID for a project
-	GetProjectID(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) (string, error)
+	GetProjectID(ctx context.Context, projectInfo *ProjectInfo) (string, error)
 
 	// GetProjectFields retrieves field values for an issue in a project
 	GetProjectFields(ctx context.Context, projectID string, issueURL string) ([]ProjectField, error)

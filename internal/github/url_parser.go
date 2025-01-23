@@ -1,23 +1,21 @@
-package projecturl
+package github
 
 import (
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
-
-	"github.com/naag/gh-project-toolkit/internal/github"
 )
 
 // ProjectInfo contains the parsed information from a GitHub project URL
 type ProjectInfo struct {
-	OwnerType     github.OwnerType
+	OwnerType     OwnerType
 	OwnerLogin    string
 	ProjectNumber int
 }
 
-// Parse takes a GitHub project URL and returns the parsed ProjectInfo
-func Parse(projectURL string) (*ProjectInfo, error) {
+// ParseProjectURL takes a GitHub project URL and returns the parsed ProjectInfo
+func ParseProjectURL(projectURL string) (*ProjectInfo, error) {
 	u, err := url.Parse(projectURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
@@ -34,12 +32,12 @@ func Parse(projectURL string) (*ProjectInfo, error) {
 	}
 
 	// Check if it's an org or user project
-	var ownerType github.OwnerType
+	var ownerType OwnerType
 	switch parts[0] {
 	case "orgs":
-		ownerType = github.OwnerTypeOrg
+		ownerType = OwnerTypeOrg
 	case "users":
-		ownerType = github.OwnerTypeUser
+		ownerType = OwnerTypeUser
 	default:
 		return nil, fmt.Errorf("invalid owner type in URL: %s", parts[0])
 	}

@@ -794,17 +794,17 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID str
 }
 
 // GetProjectID implements the Client interface
-func (c *GraphQLClient) GetProjectID(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) (string, error) {
+func (c *GraphQLClient) GetProjectID(ctx context.Context, projectInfo *ProjectInfo) (string, error) {
 	slog.Info("loading project metadata from GitHub")
 
 	var project *ProjectV2
 	var err error
 
-	switch ownerType {
+	switch projectInfo.OwnerType {
 	case OwnerTypeUser:
-		project, err = c.getUserProject(ctx, ownerLogin, projectNumber)
+		project, err = c.getUserProject(ctx, projectInfo.OwnerLogin, projectInfo.ProjectNumber)
 	case OwnerTypeOrg:
-		project, err = c.getOrgProject(ctx, ownerLogin, projectNumber)
+		project, err = c.getOrgProject(ctx, projectInfo.OwnerLogin, projectInfo.ProjectNumber)
 	default:
 		return "", fmt.Errorf("invalid owner type")
 	}
