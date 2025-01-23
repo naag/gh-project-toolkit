@@ -6,12 +6,11 @@ import (
 	"time"
 
 	"github.com/naag/gh-project-toolkit/internal/github"
-	"github.com/naag/gh-project-toolkit/internal/github/mock"
 )
 
 func TestSyncFieldsWithoutDryRun(t *testing.T) {
 	now := time.Now()
-	mockClient := &mock.Client{
+	mockClient := &github.MockClient{
 		GetProjectIDFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int) (string, error) {
 			if projectNumber == 824 {
 				return "project_1", nil
@@ -79,7 +78,7 @@ func TestSyncFieldsWithoutDryRun(t *testing.T) {
 
 func TestSyncFieldsWithDryRun(t *testing.T) {
 	now := time.Now()
-	mockClient := &mock.Client{
+	mockClient := &github.MockClient{
 		GetProjectIDFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int) (string, error) {
 			if projectNumber == 824 {
 				return "project_1", nil
