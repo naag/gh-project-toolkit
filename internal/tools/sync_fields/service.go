@@ -6,16 +6,18 @@ import (
 	"log/slog"
 
 	"github.com/naag/gh-project-toolkit/internal/github"
+	"github.com/naag/gh-project-toolkit/internal/github/client"
+	"github.com/naag/gh-project-toolkit/internal/github/util"
 )
 
 // Service provides functionality for syncing project fields
 type Service struct {
-	client github.Client
+	client client.Client
 	dryRun bool
 }
 
 // NewService creates a new sync service
-func NewService(client github.Client, dryRun bool) *Service {
+func NewService(client client.Client, dryRun bool) *Service {
 	return &Service{
 		client: client,
 		dryRun: dryRun,
@@ -61,12 +63,12 @@ func (s *Service) SyncFields(ctx context.Context, sourceProjectURL, targetProjec
 
 // parseInputs parses and validates the input URLs and field mappings
 func (s *Service) parseInputs(sourceProjectURL, targetProjectURL string, fieldMappings []string) (*github.ProjectInfo, *github.ProjectInfo, []FieldMapping, error) {
-	sourceProject, err := github.ParseProjectURL(sourceProjectURL)
+	sourceProject, err := util.ParseProjectURL(sourceProjectURL)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid source project URL: %w", err)
 	}
 
-	targetProject, err := github.ParseProjectURL(targetProjectURL)
+	targetProject, err := util.ParseProjectURL(targetProjectURL)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid target project URL: %w", err)
 	}

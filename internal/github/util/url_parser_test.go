@@ -1,8 +1,9 @@
-package github
+package util
 
 import (
 	"testing"
 
+	"github.com/naag/gh-project-toolkit/internal/github"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -10,14 +11,14 @@ func TestParseProjectURL(t *testing.T) {
 	tests := []struct {
 		name    string
 		url     string
-		want    *ProjectInfo
+		want    *github.ProjectInfo
 		wantErr string
 	}{
 		{
 			name: "valid org project URL",
 			url:  "https://github.com/orgs/testorg/projects/123",
-			want: &ProjectInfo{
-				OwnerType:     OwnerTypeOrg,
+			want: &github.ProjectInfo{
+				OwnerType:     github.OwnerTypeOrg,
 				OwnerLogin:    "testorg",
 				ProjectNumber: 123,
 			},
@@ -25,8 +26,8 @@ func TestParseProjectURL(t *testing.T) {
 		{
 			name: "valid user project URL",
 			url:  "https://github.com/users/testuser/projects/456",
-			want: &ProjectInfo{
-				OwnerType:     OwnerTypeUser,
+			want: &github.ProjectInfo{
+				OwnerType:     github.OwnerTypeUser,
 				OwnerLogin:    "testuser",
 				ProjectNumber: 456,
 			},

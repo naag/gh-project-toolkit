@@ -1,4 +1,4 @@
-package github
+package client
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/naag/gh-project-toolkit/internal/github"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
@@ -204,7 +205,7 @@ func (c *GraphQLClient) getUserProject(ctx context.Context, username string, pro
 }
 
 // GetProjectFields implements the Client interface
-func (c *GraphQLClient) GetProjectFields(ctx context.Context, projectID string, issueURL string) ([]ProjectField, error) {
+func (c *GraphQLClient) GetProjectFields(ctx context.Context, projectID string, issueURL string) ([]github.ProjectField, error) {
 	var query struct {
 		Node struct {
 			Project ProjectV2 `graphql:"... on ProjectV2"`
@@ -235,24 +236,24 @@ func (c *GraphQLClient) GetProjectFields(ctx context.Context, projectID string, 
 	}
 
 	// Convert field values to our internal format
-	var fields []ProjectField
+	var fields []github.ProjectField
 	for _, fieldValue := range targetItem.Fields.Nodes {
-		var field ProjectField
+		var field github.ProjectField
 
 		switch fieldValue.TypeName {
 		case "ProjectV2ItemFieldDateValue":
-			field = ProjectField{
+			field = github.ProjectField{
 				ID:   fieldValue.DateValue.Field.DateField.ID,
 				Name: fieldValue.DateValue.Field.DateField.Name,
-				Value: FieldValue{
+				Value: github.FieldValue{
 					Date: &fieldValue.DateValue.Date.Time,
 				},
 			}
 		case "ProjectV2ItemFieldSingleSelectValue":
-			field = ProjectField{
+			field = github.ProjectField{
 				ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
 				Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
-				Value: FieldValue{
+				Value: github.FieldValue{
 					Text: fieldValue.SingleSelectValue.Name,
 				},
 			}
@@ -307,7 +308,7 @@ func (c *GraphQLClient) findProjectField(project *ProjectV2, fieldName string) (
 }
 
 // valuesEqual checks if the current field value equals the new value
-func (c *GraphQLClient) valuesEqual(currentValue *ProjectV2ItemFieldValue, field ProjectField) bool {
+func (c *GraphQLClient) valuesEqual(currentValue *ProjectV2ItemFieldValue, field github.ProjectField) bool {
 	if currentValue == nil {
 		return false
 	}
@@ -326,7 +327,7 @@ func (c *GraphQLClient) valuesEqual(currentValue *ProjectV2ItemFieldValue, field
 }
 
 // constructMutationInput creates the input for the update mutation based on field type
-func (c *GraphQLClient) constructMutationInput(projectID, itemID, fieldID string, field ProjectField, isDateField bool) (githubv4.UpdateProjectV2ItemFieldValueInput, error) {
+func (c *GraphQLClient) constructMutationInput(projectID, itemID, fieldID string, field github.ProjectField, isDateField bool) (githubv4.UpdateProjectV2ItemFieldValueInput, error) {
 	input := githubv4.UpdateProjectV2ItemFieldValueInput{
 		ProjectID: projectID,
 		ItemID:    itemID,
@@ -372,7 +373,7 @@ func (c *GraphQLClient) constructMutationInput(projectID, itemID, fieldID string
 }
 
 // updateCacheFieldValue updates the cached field value after a successful mutation
-func (c *GraphQLClient) updateCacheFieldValue(project *ProjectV2, issueURL string, field ProjectField) {
+func (c *GraphQLClient) updateCacheFieldValue(project *ProjectV2, issueURL string, field github.ProjectField) {
 	for i, item := range project.Items.Nodes {
 		if item.Content.TypeName == "Issue" && item.Content.Issue.URL == issueURL {
 			for j, fieldValue := range item.Fields.Nodes {
@@ -423,7 +424,7 @@ func (c *GraphQLClient) fetchProject(ctx context.Context, projectID string) (*Pr
 }
 
 // getFieldUpdateValues gets the old and new values for logging
-func (c *GraphQLClient) getFieldUpdateValues(currentValue *ProjectV2ItemFieldValue, field ProjectField) (string, string) {
+func (c *GraphQLClient) getFieldUpdateValues(currentValue *ProjectV2ItemFieldValue, field github.ProjectField) (string, string) {
 	var oldValue, newValue string
 	if currentValue != nil {
 		switch currentValue.TypeName {
@@ -461,7 +462,7 @@ func (c *GraphQLClient) executeFieldUpdate(ctx context.Context, input githubv4.U
 }
 
 // UpdateProjectField implements the Client interface
-func (c *GraphQLClient) UpdateProjectField(ctx context.Context, projectID string, issueURL string, field ProjectField, dryRun bool) error {
+func (c *GraphQLClient) UpdateProjectField(ctx context.Context, projectID string, issueURL string, field github.ProjectField, dryRun bool) error {
 	// Get project from cache or fetch it
 	project := c.getProjectFromCache(projectID)
 	if project == nil {
@@ -577,7 +578,7 @@ func (c *GraphQLClient) GetProjectIssues(ctx context.Context, projectID string) 
 }
 
 // GetProjectFieldConfigsAndIssues implements the Client interface
-func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sourceProjectID string, targetProjectID string) (sourceConfigs []ProjectFieldConfig, targetConfigs []ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error) {
+func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sourceProjectID string, targetProjectID string) (sourceConfigs []github.ProjectFieldConfig, targetConfigs []github.ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error) {
 	type projectQuery struct {
 		Project struct {
 			ID     string
@@ -678,7 +679,7 @@ func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sou
 
 	// Convert field configurations
 	for _, field := range query.SourceProject.Project.Fields.Nodes {
-		config := ProjectFieldConfig{
+		config := github.ProjectFieldConfig{
 			ID:   field.DateField.ID,
 			Name: field.DateField.Name,
 			Type: field.TypeName,
@@ -687,7 +688,7 @@ func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sou
 	}
 
 	for _, field := range query.TargetProject.Project.Fields.Nodes {
-		config := ProjectFieldConfig{
+		config := github.ProjectFieldConfig{
 			ID:   field.DateField.ID,
 			Name: field.DateField.Name,
 			Type: field.TypeName,
@@ -720,7 +721,7 @@ func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sou
 }
 
 // GetProjectFieldValues implements the Client interface
-func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID string, issueURL string, fieldConfigs []ProjectFieldConfig) ([]ProjectField, error) {
+func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID string, issueURL string, fieldConfigs []github.ProjectFieldConfig) ([]github.ProjectField, error) {
 	// Use cached data if available
 	var project *ProjectV2
 	if c.cache.sourceProject != nil && c.cache.sourceProject.ID == projectID {
@@ -762,24 +763,24 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID str
 	}
 
 	// Convert field values to our internal format
-	var fields []ProjectField
+	var fields []github.ProjectField
 	for _, fieldValue := range targetItem.Fields.Nodes {
-		var field ProjectField
+		var field github.ProjectField
 
 		switch fieldValue.TypeName {
 		case "ProjectV2ItemFieldDateValue":
-			field = ProjectField{
+			field = github.ProjectField{
 				ID:   fieldValue.DateValue.Field.DateField.ID,
 				Name: fieldValue.DateValue.Field.DateField.Name,
-				Value: FieldValue{
+				Value: github.FieldValue{
 					Date: &fieldValue.DateValue.Date.Time,
 				},
 			}
 		case "ProjectV2ItemFieldSingleSelectValue":
-			field = ProjectField{
+			field = github.ProjectField{
 				ID:   fieldValue.SingleSelectValue.Field.SingleSelectField.ID,
 				Name: fieldValue.SingleSelectValue.Field.SingleSelectField.Name,
-				Value: FieldValue{
+				Value: github.FieldValue{
 					Text: fieldValue.SingleSelectValue.Name,
 				},
 			}
@@ -794,16 +795,16 @@ func (c *GraphQLClient) GetProjectFieldValues(ctx context.Context, projectID str
 }
 
 // GetProjectID implements the Client interface
-func (c *GraphQLClient) GetProjectID(ctx context.Context, projectInfo *ProjectInfo) (string, error) {
+func (c *GraphQLClient) GetProjectID(ctx context.Context, projectInfo *github.ProjectInfo) (string, error) {
 	slog.Info("loading project metadata from GitHub")
 
 	var project *ProjectV2
 	var err error
 
 	switch projectInfo.OwnerType {
-	case OwnerTypeUser:
+	case github.OwnerTypeUser:
 		project, err = c.getUserProject(ctx, projectInfo.OwnerLogin, projectInfo.ProjectNumber)
-	case OwnerTypeOrg:
+	case github.OwnerTypeOrg:
 		project, err = c.getOrgProject(ctx, projectInfo.OwnerLogin, projectInfo.ProjectNumber)
 	default:
 		return "", fmt.Errorf("invalid owner type")

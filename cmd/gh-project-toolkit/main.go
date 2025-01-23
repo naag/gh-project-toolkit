@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/naag/gh-project-toolkit/internal/github"
+	"github.com/naag/gh-project-toolkit/internal/github/client"
 	"github.com/naag/gh-project-toolkit/internal/tools/sync_fields"
 )
 
@@ -73,7 +73,7 @@ func init() {
 }
 
 func runSyncFields(cmd *cobra.Command, args []string) error {
-	client, err := github.NewGraphQLClient(verboseLevel >= 2)
+	client, err := client.NewGraphQLClient(verboseLevel >= 2)
 	if err != nil {
 		return fmt.Errorf("failed to initialize GitHub client: %w", err)
 	}
