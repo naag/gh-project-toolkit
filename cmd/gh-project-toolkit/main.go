@@ -11,7 +11,7 @@ import (
 
 	"github.com/naag/gh-project-toolkit/internal/github"
 	"github.com/naag/gh-project-toolkit/internal/github/projecturl"
-	"github.com/naag/gh-project-toolkit/internal/sync"
+	"github.com/naag/gh-project-toolkit/internal/tools/sync_fields"
 )
 
 func main() {
@@ -25,7 +25,6 @@ var rootCmd = &cobra.Command{
 	Short:        "GitHub Project Toolkit - Tools for managing GitHub projects",
 	SilenceUsage: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// Configure logging based on verbose level
 		var level slog.Level
 		switch verboseLevel {
 		case 0:
@@ -77,13 +76,13 @@ func init() {
 
 func runSyncFields(cmd *cobra.Command, args []string) error {
 	// Parse field mappings
-	mappings := make([]sync.FieldMapping, 0, len(fieldMappings))
+	mappings := make([]sync_fields.FieldMapping, 0, len(fieldMappings))
 	for _, mapping := range fieldMappings {
 		parts := strings.Split(mapping, "=")
 		if len(parts) != 2 {
 			return fmt.Errorf("invalid field mapping format: %s", mapping)
 		}
-		mappings = append(mappings, sync.FieldMapping{
+		mappings = append(mappings, sync_fields.FieldMapping{
 			SourceField: strings.TrimSpace(parts[0]),
 			TargetField: strings.TrimSpace(parts[1]),
 		})
@@ -96,7 +95,7 @@ func runSyncFields(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create sync service
-	service := sync.NewService(client, dryRun)
+	service := sync_fields.NewService(client, dryRun)
 
 	// Parse project URLs
 	sourceInfo, err := projecturl.Parse(sourceProjectURL)
