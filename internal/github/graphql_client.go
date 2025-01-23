@@ -458,7 +458,7 @@ func (c *GraphQLClient) UpdateProjectField(ctx context.Context, projectID string
 
 	// Log the field update
 	oldValue, newValue := c.getFieldUpdateValues(currentValue, field)
-	slog.Info("updating field value",
+	slog.Debug("updating field value",
 		"field", field.Name,
 		"old", oldValue,
 		"new", newValue,

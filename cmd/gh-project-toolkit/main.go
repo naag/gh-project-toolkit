@@ -23,6 +23,18 @@ var rootCmd = &cobra.Command{
 	Use:          "gh-project-toolkit",
 	Short:        "GitHub Project Toolkit - Tools for managing GitHub projects",
 	SilenceUsage: true,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Configure logging based on verbose level
+		var level slog.Level
+		switch verboseLevel {
+		case 0:
+			level = slog.LevelInfo
+		case 1, 2:
+			level = slog.LevelDebug
+		}
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+		slog.SetDefault(logger)
+	},
 }
 
 var syncFieldsCmd = &cobra.Command{
@@ -46,7 +58,7 @@ var (
 	targetProject    int
 	issues           []string
 	fieldMappings    []string
-	verbose          bool
+	verboseLevel     int
 	autoDetectIssues bool
 )
 
@@ -59,7 +71,7 @@ func init() {
 	syncFieldsCmd.Flags().IntVar(&targetProject, "target-project", 0, "Target project number")
 	syncFieldsCmd.Flags().StringArrayVar(&issues, "issue", nil, "GitHub issue URL (can be specified multiple times)")
 	syncFieldsCmd.Flags().StringArrayVar(&fieldMappings, "field-mapping", nil, "Field mapping in the format 'source=target' (can be specified multiple times)")
-	syncFieldsCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging of HTTP traffic")
+	syncFieldsCmd.Flags().CountVarP(&verboseLevel, "verbose", "v", "Verbosity level (-v for debug logs, -vv for debug logs and HTTP traffic)")
 	syncFieldsCmd.Flags().BoolVar(&autoDetectIssues, "auto-detect-issues", false, "Automatically detect and sync all issues present in both projects")
 
 	// Only require issue flag if auto-detect is disabled
@@ -86,7 +98,7 @@ func runSyncFields(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize GitHub client
-	client, err := github.NewGraphQLClient(verbose)
+	client, err := github.NewGraphQLClient(verboseLevel >= 2)
 	if err != nil {
 		return fmt.Errorf("failed to initialize GitHub client: %w", err)
 	}
