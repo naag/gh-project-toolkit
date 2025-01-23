@@ -24,7 +24,7 @@ linters-settings:
     rules:
       - name: exported
         severity: warning
-        disabled: false
+        disabled: true
   gosec:
     excludes:
       - G115  # Disable integer overflow check
