@@ -8,7 +8,6 @@ A tool for managing GitHub projects (v2) that helps synchronize fields between p
 - Support for both organization and user-scoped projects
 - Automatic issue detection across projects
 - Flexible field mapping configuration
-- Verbose logging for debugging
 
 ## Installation
 
