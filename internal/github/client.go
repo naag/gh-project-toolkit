@@ -38,18 +38,21 @@ const (
 
 // Client defines the interface for interacting with GitHub
 type Client interface {
+	// GetProjectID retrieves the globally unique node ID for a project
+	GetProjectID(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) (string, error)
+
 	// GetProjectFields retrieves field values for an issue in a project
-	GetProjectFields(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string) ([]ProjectField, error)
+	GetProjectFields(ctx context.Context, projectID string, issueURL string) ([]ProjectField, error)
 
 	// UpdateProjectField updates a field value for an issue in a project
-	UpdateProjectField(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string, field ProjectField) error
+	UpdateProjectField(ctx context.Context, projectID string, issueURL string, field ProjectField) error
 
 	// GetProjectIssues retrieves all issue URLs from a project
-	GetProjectIssues(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int) ([]string, error)
+	GetProjectIssues(ctx context.Context, projectID string) ([]string, error)
 
 	// GetProjectFieldConfigsAndIssues retrieves field configurations and issues for both projects
-	GetProjectFieldConfigsAndIssues(ctx context.Context, ownerType OwnerType, ownerLogin string, sourceProjectNumber, targetProjectNumber int) (sourceConfigs []ProjectFieldConfig, targetConfigs []ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error)
+	GetProjectFieldConfigsAndIssues(ctx context.Context, sourceProjectID string, targetProjectID string) (sourceConfigs []ProjectFieldConfig, targetConfigs []ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error)
 
 	// GetProjectFieldValues retrieves field values for an issue in a project, using pre-fetched field configurations
-	GetProjectFieldValues(ctx context.Context, ownerType OwnerType, ownerLogin string, projectNumber int, issueURL string, fieldConfigs []ProjectFieldConfig) ([]ProjectField, error)
+	GetProjectFieldValues(ctx context.Context, projectID string, issueURL string, fieldConfigs []ProjectFieldConfig) ([]ProjectField, error)
 }

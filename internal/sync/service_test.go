@@ -12,18 +12,38 @@ import (
 func TestSyncFields(t *testing.T) {
 	now := time.Now()
 	mockClient := &mock.Client{
-		GetProjectFieldsFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int, issueURL string) ([]github.ProjectField, error) {
-			return []github.ProjectField{
-				{
-					ID:   "1",
-					Name: "start",
-					Value: github.FieldValue{
-						Date: &now,
-					},
-				},
-			}, nil
+		GetProjectIDFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int) (string, error) {
+			if projectNumber == 824 {
+				return "project_1", nil
+			}
+			return "project_2", nil
 		},
-		UpdateProjectFieldFunc: func(ctx context.Context, ownerType github.OwnerType, ownerLogin string, projectNumber int, issueURL string, field github.ProjectField) error {
+		GetProjectFieldConfigsAndIssuesFunc: func(ctx context.Context, sourceProjectID string, targetProjectID string) (sourceConfigs []github.ProjectFieldConfig, targetConfigs []github.ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error) {
+			return []github.ProjectFieldConfig{
+					{ID: "1", Name: "start", Type: "ProjectV2Field"},
+				},
+				[]github.ProjectFieldConfig{
+					{ID: "2", Name: "Start date", Type: "ProjectV2Field"},
+				},
+				[]string{"https://github.com/org/repo/issues/1"},
+				[]string{"https://github.com/org/repo/issues/1"},
+				nil
+		},
+		GetProjectFieldValuesFunc: func(ctx context.Context, projectID string, issueURL string, fieldConfigs []github.ProjectFieldConfig) ([]github.ProjectField, error) {
+			if projectID == "project_1" {
+				return []github.ProjectField{
+					{
+						ID:   "1",
+						Name: "start",
+						Value: github.FieldValue{
+							Date: &now,
+						},
+					},
+				}, nil
+			}
+			return []github.ProjectField{}, nil
+		},
+		UpdateProjectFieldFunc: func(ctx context.Context, projectID string, issueURL string, field github.ProjectField) error {
 			if field.Name != "Start date" {
 				t.Errorf("expected field name 'Start date', got %s", field.Name)
 			}

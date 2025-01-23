@@ -26,20 +26,30 @@ type FieldMapping struct {
 
 // SyncFields syncs field values from source project to target project
 func (s *Service) SyncFields(ctx context.Context, ownerType github.OwnerType, ownerLogin string, sourceProject, targetProject int, issues []string, mappings []FieldMapping) error {
-	// Get field configurations and issues for both projects first
-	sourceFieldConfigs, targetFieldConfigs, sourceIssues, targetIssues, err := s.client.GetProjectFieldConfigsAndIssues(ctx, ownerType, ownerLogin, sourceProject, targetProject)
+	// First, get the project IDs
+	sourceProjectID, err := s.client.GetProjectID(ctx, ownerType, ownerLogin, sourceProject)
+	if err != nil {
+		return fmt.Errorf("failed to get source project ID: %w", err)
+	}
+
+	targetProjectID, err := s.client.GetProjectID(ctx, ownerType, ownerLogin, targetProject)
+	if err != nil {
+		return fmt.Errorf("failed to get target project ID: %w", err)
+	}
+
+	// Get field configurations and issues for both projects
+	sourceFieldConfigs, targetFieldConfigs, sourceIssues, targetIssues, err := s.client.GetProjectFieldConfigsAndIssues(ctx, sourceProjectID, targetProjectID)
 	if err != nil {
 		return fmt.Errorf("failed to get project field configs and issues: %w", err)
 	}
 
 	// If no issues were provided, use the common issues from both projects
 	if len(issues) == 0 {
-		commonIssues := findCommonIssues(sourceIssues, targetIssues)
-		if len(commonIssues) == 0 {
+		issues = findCommonIssues(sourceIssues, targetIssues)
+		if len(issues) == 0 {
 			return fmt.Errorf("no common issues found between source and target projects")
 		}
-		issues = commonIssues
-		slog.Info("found common issues", slog.Int("count", len(commonIssues)))
+		slog.Info("found common issues", slog.Int("count", len(issues)))
 	}
 
 	// Process issues in batches to avoid too many concurrent requests
@@ -52,7 +62,7 @@ func (s *Service) SyncFields(ctx context.Context, ownerType github.OwnerType, ow
 		batch := issues[i:end]
 
 		// Get field values for all issues in the batch from both projects
-		sourceValues, targetValues, err := s.getFieldValuesForBatch(ctx, ownerType, ownerLogin, sourceProject, targetProject, batch, sourceFieldConfigs, targetFieldConfigs)
+		sourceValues, targetValues, err := s.getFieldValuesForBatch(ctx, sourceProjectID, targetProjectID, batch, sourceFieldConfigs, targetFieldConfigs)
 		if err != nil {
 			return err
 		}
@@ -62,14 +72,14 @@ func (s *Service) SyncFields(ctx context.Context, ownerType github.OwnerType, ow
 			sourceFields := sourceValues[issueURL]
 			targetFields := targetValues[issueURL]
 
-			// Create a map of target field names to their current values for quick lookup
+			// Create a map of target fields by name for easy lookup
 			targetFieldMap := make(map[string]github.ProjectField)
 			for _, field := range targetFields {
 				targetFieldMap[field.Name] = field
 			}
 
 			// Apply field mappings
-			if err := s.applyFieldMappings(ctx, ownerType, ownerLogin, targetProject, issueURL, sourceFields, targetFieldMap, mappings); err != nil {
+			if err := s.applyFieldMappings(ctx, targetProjectID, issueURL, sourceFields, targetFieldMap, mappings); err != nil {
 				return err
 			}
 		}
@@ -96,20 +106,20 @@ func findCommonIssues(sourceIssues, targetIssues []string) []string {
 }
 
 // getFieldValuesForBatch retrieves field values for a batch of issues from both projects
-func (s *Service) getFieldValuesForBatch(ctx context.Context, ownerType github.OwnerType, ownerLogin string, sourceProject, targetProject int, batch []string, sourceFieldConfigs, targetFieldConfigs []github.ProjectFieldConfig) (map[string][]github.ProjectField, map[string][]github.ProjectField, error) {
+func (s *Service) getFieldValuesForBatch(ctx context.Context, sourceProjectID string, targetProjectID string, batch []string, sourceFieldConfigs []github.ProjectFieldConfig, targetFieldConfigs []github.ProjectFieldConfig) (map[string][]github.ProjectField, map[string][]github.ProjectField, error) {
 	sourceValues := make(map[string][]github.ProjectField)
 	targetValues := make(map[string][]github.ProjectField)
 
 	for _, issueURL := range batch {
 		// Get source values using cached data
-		sourceFields, err := s.client.GetProjectFieldValues(ctx, ownerType, ownerLogin, sourceProject, issueURL, sourceFieldConfigs)
+		sourceFields, err := s.client.GetProjectFieldValues(ctx, sourceProjectID, issueURL, sourceFieldConfigs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get source field values for %s: %w", issueURL, err)
 		}
 		sourceValues[issueURL] = sourceFields
 
 		// Get target values using cached data
-		targetFields, err := s.client.GetProjectFieldValues(ctx, ownerType, ownerLogin, targetProject, issueURL, targetFieldConfigs)
+		targetFields, err := s.client.GetProjectFieldValues(ctx, targetProjectID, issueURL, targetFieldConfigs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get target field values for %s: %w", issueURL, err)
 		}
@@ -119,8 +129,8 @@ func (s *Service) getFieldValuesForBatch(ctx context.Context, ownerType github.O
 	return sourceValues, targetValues, nil
 }
 
-// applyFieldMappings applies field mappings to update target fields
-func (s *Service) applyFieldMappings(ctx context.Context, ownerType github.OwnerType, ownerLogin string, targetProject int, issueURL string, sourceFields []github.ProjectField, targetFieldMap map[string]github.ProjectField, mappings []FieldMapping) error {
+// applyFieldMappings applies field mappings for an issue
+func (s *Service) applyFieldMappings(ctx context.Context, targetProjectID string, issueURL string, sourceFields []github.ProjectField, targetFieldMap map[string]github.ProjectField, mappings []FieldMapping) error {
 	for _, mapping := range mappings {
 		for _, sourceField := range sourceFields {
 			if sourceField.Name == mapping.SourceField {
@@ -138,7 +148,7 @@ func (s *Service) applyFieldMappings(ctx context.Context, ownerType github.Owner
 				}
 
 				// Update field in target project
-				if err := s.client.UpdateProjectField(ctx, ownerType, ownerLogin, targetProject, issueURL, targetField); err != nil {
+				if err := s.client.UpdateProjectField(ctx, targetProjectID, issueURL, targetField); err != nil {
 					return fmt.Errorf("failed to update field for %s: %w", issueURL, err)
 				}
 				break
@@ -148,7 +158,7 @@ func (s *Service) applyFieldMappings(ctx context.Context, ownerType github.Owner
 	return nil
 }
 
-// fieldsEqual checks if two fields have the same value
+// fieldsEqual checks if two fields have equal values
 func fieldsEqual(a, b github.ProjectField) bool {
 	if a.Value.Date != nil && b.Value.Date != nil {
 		return a.Value.Date.Equal(*b.Value.Date)
