@@ -21,6 +21,7 @@ type GraphQLClient struct {
 		targetProject *ProjectV2
 		sourceNumber  int
 		targetNumber  int
+		issueTitles   map[string]string // map of issue URL to title
 	}
 }
 
@@ -63,8 +64,11 @@ func NewGraphQLClient(verbose bool) (*GraphQLClient, error) {
 		}
 	}
 
-	client := githubv4.NewClient(httpClient)
-	return &GraphQLClient{client: client}, nil
+	client := &GraphQLClient{
+		client: githubv4.NewClient(httpClient),
+	}
+	client.cache.issueTitles = make(map[string]string)
+	return client, nil
 }
 
 // ProjectV2 represents a GitHub project (v2)
@@ -111,7 +115,8 @@ type (
 		Content struct {
 			TypeName string `graphql:"__typename"`
 			Issue    struct {
-				URL string
+				URL   string
+				Title string
 			} `graphql:"... on Issue"`
 		}
 	}
@@ -554,6 +559,7 @@ func (c *GraphQLClient) GetProjectIssues(ctx context.Context, projectID string) 
 	for _, item := range items {
 		if item.Content.TypeName == "Issue" {
 			issues = append(issues, item.Content.Issue.URL)
+			c.cache.issueTitles[item.Content.Issue.URL] = item.Content.Issue.Title
 		}
 	}
 
@@ -696,12 +702,14 @@ func (c *GraphQLClient) GetProjectFieldConfigsAndIssues(ctx context.Context, sou
 	for _, item := range sourceItems {
 		if item.Content.TypeName == "Issue" {
 			sourceIssues = append(sourceIssues, item.Content.Issue.URL)
+			c.cache.issueTitles[item.Content.Issue.URL] = item.Content.Issue.Title
 		}
 	}
 
 	for _, item := range targetItems {
 		if item.Content.TypeName == "Issue" {
 			targetIssues = append(targetIssues, item.Content.Issue.URL)
+			c.cache.issueTitles[item.Content.Issue.URL] = item.Content.Issue.Title
 		}
 	}
 
@@ -813,8 +821,12 @@ func (c *GraphQLClient) GetProjectID(ctx context.Context, ownerType OwnerType, o
 
 // GetIssueTitle implements the Client interface
 func (c *GraphQLClient) GetIssueTitle(ctx context.Context, issueURL string) (string, error) {
-	// Extract owner, repo, and issue number from URL
-	// URL format: https://github.com/owner/repo/issues/number
+	// Check cache first
+	if title, ok := c.cache.issueTitles[issueURL]; ok {
+		return title, nil
+	}
+
+	// If not in cache, fall back to querying GitHub
 	parts := strings.Split(issueURL, "/")
 	if len(parts) < 7 {
 		return "", fmt.Errorf("invalid issue URL format: %s", issueURL)
@@ -829,7 +841,7 @@ func (c *GraphQLClient) GetIssueTitle(ctx context.Context, issueURL string) (str
 		return "", fmt.Errorf("invalid issue number: %s", number)
 	}
 
-	slog.Debug("loading issue title from GitHub",
+	slog.Debug("loading issue title from GitHub (cache miss)",
 		"owner", owner,
 		"repo", repo,
 		"number", issueNumber,
@@ -853,5 +865,8 @@ func (c *GraphQLClient) GetIssueTitle(ctx context.Context, issueURL string) (str
 		return "", fmt.Errorf("failed to query issue: %w", err)
 	}
 
-	return query.Repository.Issue.Title, nil
+	// Cache the result
+	title := query.Repository.Issue.Title
+	c.cache.issueTitles[issueURL] = title
+	return title, nil
 }
