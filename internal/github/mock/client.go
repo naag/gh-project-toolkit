@@ -14,6 +14,7 @@ type Client struct {
 	GetProjectIssuesFunc                func(ctx context.Context, projectID string) ([]string, error)
 	GetProjectFieldConfigsAndIssuesFunc func(ctx context.Context, sourceProjectID string, targetProjectID string) (sourceConfigs []github.ProjectFieldConfig, targetConfigs []github.ProjectFieldConfig, sourceIssues []string, targetIssues []string, err error)
 	GetProjectFieldValuesFunc           func(ctx context.Context, projectID string, issueURL string, fieldConfigs []github.ProjectFieldConfig) ([]github.ProjectField, error)
+	GetIssueTitleFunc                   func(ctx context.Context, issueURL string) (string, error)
 }
 
 // GetProjectID implements the github.Client interface
@@ -62,4 +63,12 @@ func (c *Client) GetProjectFieldValues(ctx context.Context, projectID string, is
 		return c.GetProjectFieldValuesFunc(ctx, projectID, issueURL, fieldConfigs)
 	}
 	return nil, nil
+}
+
+// GetIssueTitle implements the github.Client interface
+func (c *Client) GetIssueTitle(ctx context.Context, issueURL string) (string, error) {
+	if c.GetIssueTitleFunc != nil {
+		return c.GetIssueTitleFunc(ctx, issueURL)
+	}
+	return "", nil
 }

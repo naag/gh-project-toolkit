@@ -55,6 +55,9 @@ func TestSyncFieldsWithoutDryRun(t *testing.T) {
 			}
 			return nil
 		},
+		GetIssueTitleFunc: func(ctx context.Context, issueURL string) (string, error) {
+			return "Test Issue", nil
+		},
 	}
 
 	service := NewService(mockClient, false)
@@ -119,6 +122,9 @@ func TestSyncFieldsWithDryRun(t *testing.T) {
 				t.Error("expected dryRun to be true")
 			}
 			return nil
+		},
+		GetIssueTitleFunc: func(ctx context.Context, issueURL string) (string, error) {
+			return "Test Issue", nil
 		},
 	}
 

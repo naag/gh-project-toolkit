@@ -76,6 +76,14 @@ func (s *Service) SyncFields(ctx context.Context, ownerType github.OwnerType, ow
 			sourceFields := sourceValues[issueURL]
 			targetFields := targetValues[issueURL]
 
+			// Get issue title for logging
+			title, err := s.client.GetIssueTitle(ctx, issueURL)
+			if err != nil {
+				slog.Warn("failed to get issue title", "issue", issueURL, "error", err)
+				title = "<unknown>"
+			}
+			slog.Info("processing issue", "url", issueURL, "title", title)
+
 			// Create a map of target fields by name for easy lookup
 			targetFieldMap := make(map[string]github.ProjectField)
 			for _, field := range targetFields {

@@ -55,4 +55,7 @@ type Client interface {
 
 	// GetProjectFieldValues retrieves field values for an issue in a project, using pre-fetched field configurations
 	GetProjectFieldValues(ctx context.Context, projectID string, issueURL string, fieldConfigs []ProjectFieldConfig) ([]ProjectField, error)
+
+	// GetIssueTitle retrieves the title of an issue by its URL
+	GetIssueTitle(ctx context.Context, issueURL string) (string, error)
 }

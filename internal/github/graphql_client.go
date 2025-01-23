@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/shurcooL/githubv4"
@@ -669,4 +671,43 @@ func (c *GraphQLClient) GetProjectID(ctx context.Context, ownerType OwnerType, o
 	}
 
 	return project.ID, nil
+}
+
+// GetIssueTitle implements the Client interface
+func (c *GraphQLClient) GetIssueTitle(ctx context.Context, issueURL string) (string, error) {
+	// Extract owner, repo, and issue number from URL
+	// URL format: https://github.com/owner/repo/issues/number
+	parts := strings.Split(issueURL, "/")
+	if len(parts) < 7 {
+		return "", fmt.Errorf("invalid issue URL format: %s", issueURL)
+	}
+
+	owner := parts[3]
+	repo := parts[4]
+	number := parts[6]
+
+	issueNumber, err := strconv.Atoi(number)
+	if err != nil {
+		return "", fmt.Errorf("invalid issue number: %s", number)
+	}
+
+	var query struct {
+		Repository struct {
+			Issue struct {
+				Title string
+			} `graphql:"issue(number: $issueNumber)"`
+		} `graphql:"repository(owner: $owner, name: $repo)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner":       githubv4.String(owner),
+		"repo":        githubv4.String(repo),
+		"issueNumber": githubv4.Int(issueNumber),
+	}
+
+	if err := c.client.Query(ctx, &query, variables); err != nil {
+		return "", fmt.Errorf("failed to query issue: %w", err)
+	}
+
+	return query.Repository.Issue.Title, nil
 }
