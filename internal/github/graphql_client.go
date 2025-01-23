@@ -338,9 +338,17 @@ func (c *GraphQLClient) constructMutationInput(projectID, itemID, fieldID string
 		date := githubv4.Date{Time: *field.Value.Date}
 		input.Value = githubv4.ProjectV2FieldValue{Date: &date}
 	case !isDateField && field.Value.Text != nil:
-		// Find the option ID for the single select value
+		// Find the option ID for the single select value in the target project
 		var optionID string
-		for _, f := range c.cache.sourceProject.Fields.Nodes {
+		var project *ProjectV2
+		if c.cache.targetProject != nil && c.cache.targetProject.ID == projectID {
+			project = c.cache.targetProject
+		}
+		if project == nil {
+			return input, fmt.Errorf("target project not found in cache")
+		}
+
+		for _, f := range project.Fields.Nodes {
 			if f.TypeName == "ProjectV2SingleSelectField" && f.SingleSelectField.Name == field.Name {
 				for _, opt := range f.SingleSelectField.Options {
 					if opt.Name == *field.Value.Text {
@@ -352,7 +360,7 @@ func (c *GraphQLClient) constructMutationInput(projectID, itemID, fieldID string
 			}
 		}
 		if optionID == "" {
-			return input, fmt.Errorf("single select option %q not found for field %q", *field.Value.Text, field.Name)
+			return input, fmt.Errorf("single select option %q not found in target field %q", *field.Value.Text, field.Name)
 		}
 		optionIDv4 := githubv4.String(optionID)
 		input.Value = githubv4.ProjectV2FieldValue{SingleSelectOptionID: &optionIDv4}
