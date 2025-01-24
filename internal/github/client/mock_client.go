@@ -6,7 +6,6 @@ import (
 	"github.com/naag/gh-project-toolkit/internal/github"
 )
 
-// MockClient implements MockClient interface for testing
 type MockClient struct {
 	GetProjectIDFunc                    func(ctx context.Context, projectInfo *github.ProjectInfo) (string, error)
 	GetProjectFieldsFunc                func(ctx context.Context, projectID string, issueURL string) ([]github.ProjectField, error)
@@ -17,7 +16,6 @@ type MockClient struct {
 	GetIssueTitleFunc                   func(ctx context.Context, issueURL string) (string, error)
 }
 
-// GetProjectID implements the Client interface
 func (c *MockClient) GetProjectID(ctx context.Context, projectInfo *github.ProjectInfo) (string, error) {
 	if c.GetProjectIDFunc != nil {
 		return c.GetProjectIDFunc(ctx, projectInfo)
@@ -25,7 +23,6 @@ func (c *MockClient) GetProjectID(ctx context.Context, projectInfo *github.Proje
 	return "", nil
 }
 
-// GetProjectFields implements the Client interface
 func (c *MockClient) GetProjectFields(ctx context.Context, projectID string, issueURL string) ([]github.ProjectField, error) {
 	if c.GetProjectFieldsFunc != nil {
 		return c.GetProjectFieldsFunc(ctx, projectID, issueURL)

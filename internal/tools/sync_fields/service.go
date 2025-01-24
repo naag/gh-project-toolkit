@@ -10,13 +10,11 @@ import (
 	"github.com/naag/gh-project-toolkit/internal/github/util"
 )
 
-// Service provides functionality for syncing project fields
 type Service struct {
 	client client.Client
 	dryRun bool
 }
 
-// NewService creates a new sync service
 func NewService(client client.Client, dryRun bool) *Service {
 	return &Service{
 		client: client,
@@ -24,8 +22,6 @@ func NewService(client client.Client, dryRun bool) *Service {
 	}
 }
 
-// SyncFields synchronizes field values between two GitHub projects for the specified issues
-// using the provided field mappings
 func (s *Service) SyncFields(ctx context.Context, sourceProjectURL, targetProjectURL string, issues []string, fieldMappings []string) error {
 	// Parse project URLs and field mappings
 	sourceProject, targetProject, mappings, err := s.parseInputs(sourceProjectURL, targetProjectURL, fieldMappings)

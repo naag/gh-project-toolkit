@@ -9,7 +9,6 @@ import (
 	"github.com/naag/gh-project-toolkit/internal/github"
 )
 
-// ParseProjectURL takes a GitHub project URL and returns the parsed ProjectInfo
 func ParseProjectURL(projectURL string) (*github.ProjectInfo, error) {
 	u, err := url.Parse(projectURL)
 	if err != nil {

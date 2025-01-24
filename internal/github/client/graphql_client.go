@@ -12,7 +12,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// GraphQLClient implements the Client interface using GitHub's GraphQL API
 type GraphQLClient struct {
 	client *githubv4.Client
 	cache  struct {
@@ -23,7 +22,6 @@ type GraphQLClient struct {
 	}
 }
 
-// GithubDate is a custom date type that can parse GitHub's date format
 type GithubDate struct {
 	time.Time
 }
@@ -44,7 +42,6 @@ func (d *GithubDate) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// NewGraphQLClient creates a new GitHub GraphQL client using the token from GITHUB_TOKEN env var
 func NewGraphQLClient(verbose bool) (*GraphQLClient, error) {
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
@@ -103,7 +100,6 @@ type (
 		} `graphql:"... on ProjectV2SingleSelectField"`
 	}
 
-	// ProjectV2Item represents an item (issue) in a GitHub project
 	ProjectV2Item struct {
 		ID     string
 		Fields struct {
@@ -118,10 +114,8 @@ type (
 		}
 	}
 
-	// ProjectV2ItemFieldValue represents a field value for an item
 	ProjectV2ItemFieldValue struct {
-		TypeName string `graphql:"__typename"`
-		// Date field value
+		TypeName  string `graphql:"__typename"`
 		DateValue struct {
 			Field struct {
 				TypeName  string `graphql:"__typename"`
@@ -132,7 +126,6 @@ type (
 			}
 			Date *GithubDate `graphql:"date"`
 		} `graphql:"... on ProjectV2ItemFieldDateValue"`
-		// Single select field value
 		SingleSelectValue struct {
 			Field struct {
 				TypeName          string `graphql:"__typename"`
