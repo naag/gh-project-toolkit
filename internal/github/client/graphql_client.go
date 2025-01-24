@@ -65,27 +65,23 @@ func NewGraphQLClient(verbose bool) (*GraphQLClient, error) {
 	return client, nil
 }
 
-// ProjectV2 represents a GitHub project (v2)
-type ProjectV2 struct {
-	ID     string
-	Fields struct {
-		Nodes []ProjectV2FieldConfiguration
-	} `graphql:"fields(first: 100)"`
-	Items struct {
-		Nodes    []ProjectV2Item
-		PageInfo struct {
-			HasNextPage bool
-			EndCursor   string
-		}
-	} `graphql:"items(first: 100, after: $afterCursor)"`
-}
-
-// GraphQL query types for GitHub's API
 type (
-	// ProjectV2FieldConfiguration represents a field configuration in a project
+	ProjectV2 struct {
+		ID     string
+		Fields struct {
+			Nodes []ProjectV2FieldConfiguration
+		} `graphql:"fields(first: 100)"`
+		Items struct {
+			Nodes    []ProjectV2Item
+			PageInfo struct {
+				HasNextPage bool
+				EndCursor   string
+			}
+		} `graphql:"items(first: 100, after: $afterCursor)"`
+	}
+
 	ProjectV2FieldConfiguration struct {
-		TypeName string `graphql:"__typename"`
-		// Common fields for all field types
+		TypeName  string `graphql:"__typename"`
 		DateField struct {
 			ID   string
 			Name string
